@@ -1,0 +1,23 @@
+{
+    // 🎨 Dracula theme
+    "workbench.colorTheme": "Dracula Theme",
+
+    // 🅰️ JetBrains Mono font setup
+    "editor.fontFamily": "'JetBrains Mono', Consolas, 'Courier New', monospace",
+    "editor.fontSize": 15,
+    "editor.lineHeight": 22,
+    "editor.fontLigatures": true,
+
+    // 🖥 Terminal font to match
+    "terminal.integrated.fontFamily": "JetBrains Mono",
+    "terminal.integrated.fontSize": 13,
+
+    // 🌈 Optional extras
+    "editor.cursorBlinking": "phase",
+    "editor.cursorSmoothCaretAnimation": "on",
+    "editor.smoothScrolling": true,
+    "window.zoomLevel": 0,
+    "files.associations": {
+        "string.h": "c"
+    },
+}
