@@ -1,0 +1,833 @@
+// THIS CODE IS FOR REFERENCING; SINCE THIS IS NOT OBJECT AVOIDANCE
+// WE COULD MAKE USE OF THE LINE FOLLOWING, JUNCTION PROCESSING,... ALGORITHMS
+// FOR OUR PROJECT, WE DON'T CONSIDIER THE LOAD, SO IGNORE HX711 AND WEIGHT-RELATED STUFFS
+
+// this is the code for 0.3m/s mobile 
+
+#include <Arduino.h>
+#include "HX711.h"
+
+/* ======================== Motor pins ======================== */
+// LEFT
+const int L_IN1 = 22;
+const int L_IN2 = 18;
+const int L_PWM = 23;
+const int L_ENC_A = 35;
+const int L_ENC_B = 34;
+const int L_PPR = 660;
+
+// RIGHT
+const int R_IN1 = 21;
+const int R_IN2 = 19;
+const int R_PWM = 5;
+const int R_ENC_A = 17;
+const int R_ENC_B = 16;
+const int R_PPR = 660;
+
+/* ========================= Button ========================= */
+const int BTN_PIN = 15;  // Start
+const unsigned long DEBOUNCE_MS = 30;
+const unsigned long BOOT_LOCK_MS = 400;
+
+bool btn_stable = HIGH, btn_prev = HIGH;
+unsigned long btn_change_ms = 0, boot_ms = 0;
+bool boot_armed = false;
+bool started = false;  // chỉ khi true xe mới chạy
+
+/* ========================= Sensors & HX711 ========================= */
+#define ss1 32
+#define ss2 33
+#define ss3 25
+#define ss4 26
+#define ss5 27
+#define ss6 14
+#define ss7 13
+
+#define DATA_PIN 2   // HX711 DT
+#define CLOCK_PIN 4  // HX711 SCK
+
+int threshold = 2000;
+float CALIBRATION_FACTOR = -437.27;
+
+/* ========================= Thời gian & tần số vòng lặp ========================= */
+const unsigned long RPM_DT_MS = 10;            // ~100 Hz
+const unsigned long SAMPLE_INTERVAL_MS = 100;  // Telemetry 10 Hz
+const unsigned long HX_MIN_INTERVAL_MS = 30;
+
+unsigned long t_rpm_prev = 0;
+unsigned long t_sample_prev = 0;
+unsigned long hx_last_ms = 0;
+
+/* ========================= Lyapunov (bám line) ========================= */
+// Lưu ý: K1, K2, K3 lớn có thể làm "đá" mạnh khi de lớn (lúc khởi động)
+// Giảm "jump" bằng soft-start + reset đạo hàm + kẹp, lọc de
+const double K1 = 20.0;
+const double K2 = 0.0003;
+const double K3 = 9.5;
+const double TURN_GAIN = 95.0;  // chuyển w_cmd -> chênh lệch rpm
+
+// Debug errors
+double e2_prev = 0.0;  // giữ x trước đó
+double e3_dbg = 0.0;   // đạo hàm “arctan(e2 - e2_prev)/dt”
+
+/* ========================= PID bánh trái/phải ========================= */
+struct PID {
+  double Kp, Ki, Kd;
+  double iTerm = 0, prevE = 0, out = 0;
+  double outMin = 0, outMax = 255;
+
+  void setGains(double p, double i, double d) {
+    Kp = p;
+    Ki = i;
+    Kd = d;
+  }
+
+  int update(double sp, double meas, double dt_s) {
+    double e = sp - meas;
+    iTerm += Ki * e * dt_s;
+    if (iTerm > outMax) iTerm = outMax;
+    if (iTerm < outMin) iTerm = outMin;
+    double dTerm = Kd * (e - prevE) / dt_s;
+    prevE = e;
+    out = Kp * e + iTerm + dTerm;
+    if (out > outMax) out = outMax;
+    if (out < outMin) out = outMin;
+    return (int)out;
+  }
+
+  void reset() {
+    iTerm = 0;
+    prevE = 0;
+    out = 0;
+  }
+} pidL, pidR;
+
+// PID gains
+const double KpLe = 0.6, KiLe = 1.2, KdLe = 0.0;
+const double KpRi = 0.5, KiRi = 0.9, KdRi = 0.0;
+
+/* ========================= Biến đo/điều khiển ========================= */
+volatile long L_counts = 0, R_counts = 0;
+volatile int L_lastA = LOW, R_lastA = LOW;
+
+double L_rpm = 0.0, R_rpm = 0.0;      // rpm đo
+double spL_rpm = 0.0, spR_rpm = 0.0;  // rpm mục tiêu
+
+// tốc độ hành trình cơ bản (rpm)
+const int speed_base_rpm_nominal = 100;
+double speed_cmd_rpm = 50.0;  // sẽ ramp lên 70
+
+// Trạng thái đạo hàm Lyapunov
+double e_prev = 0.0;
+
+/* ========================= Dò line (TB/x) ========================= */
+HX711 scale;
+int s[8], d[8], D = 0;
+float sensorValue1, sensorValue2, sensorValue3, sensorValue4, sensorValue5, sensorValue6, sensorValue7;
+float TB = 0.0f;
+float x = 0.0f;  // lệch line đã “calib”
+long weight_In_g = 0;
+
+/* ========================= FSM: giao lộ / tải hàng ========================= */
+enum Mode { IDLE,
+            RUN,
+            HARD_BRAKE,
+            WAIT_LOAD,
+            LOST_LINE,
+            TURN_LEFT,
+            TURN_RIGHT,
+            DELIVERED };
+Mode mode = IDLE, prev_mode = IDLE;
+
+const int INTERSECTION_D_MIN = 3;  // D >= 3 coi là giao lộ (nhưng phải liên tiếp qua d4)
+const int INTERSECTION_ENTER_D = 3;
+const int INTERSECTION_EXIT_D = 2;
+const int IC_MAX = 2;  // chỉ đếm tới 2
+bool ic2_latched = false;
+
+int intersection_count = 0;
+bool in_intersection = false;
+
+enum DeliveryDir { DIR_NONE,
+                   DIR_RIGHT,
+                   DIR_LEFT };
+DeliveryDir delivery_dir = DIR_NONE;
+
+// TURN params
+const unsigned long TURN_TIME_MS = 400;
+const int TURN_PWM = 150;
+unsigned long t_turn_end = 0;
+
+// WAIT_LOAD
+const int WEIGHT_STABLE_EPS = 40;
+const unsigned long WEIGHT_STABLE_MS = 2000;
+unsigned long w_stable_start = 0;
+long w_ref = 0;
+bool w_is_stable = false;
+long w_stabilized = 0;
+
+const int LOAD_RESUME_MIN = 800;
+const int MIN_SPEED_APPROACH_RPM = 40;
+const int APPROACH_DECEL_MS = 500;
+
+unsigned long t_brake_until = 0;
+const int BRAKE_TIME_MS = 180;
+const int BRAKE_PWM = 255;
+
+bool in_approach = false;
+unsigned long t_approach_start = 0;
+
+bool brake_active = false;
+float approach_p = 0.0f;
+
+/* ========================= Soft-start RUN (ramp) ========================= */
+// >>> Thêm để tránh “jump” khi vào RUN <<<
+static unsigned long run_start_ms = 0;
+const float RAMP_MS = 150.0f;      // ramp 0 -> 70 rpm trong 300 ms
+bool first_run_after_boot = true;  // nếu muốn chỉ ramp lần RUN đầu, bỏ ramp ở các RUN sau
+
+/* ========================= Telemetry ========================= */
+const char* modeName(Mode m) {
+  switch (m) {
+    case IDLE: return "IDLE";
+    case RUN: return "RUN";
+    case HARD_BRAKE: return "HARD_BRAKE";
+    case WAIT_LOAD: return "WAIT_LOAD";
+    case LOST_LINE: return "LOST_LINE";
+    case TURN_LEFT: return "TURN_LEFT";
+    case TURN_RIGHT: return "TURN_RIGHT";
+    case DELIVERED: return "DELIVERED";
+    default: return "UNKNOWN";
+  }
+}
+
+void sendEvent(const char* type, const char* k1, const char* v1, const char* k2 = nullptr, const char* v2 = nullptr) {
+  char buf[256];
+  if (k2) {
+    snprintf(buf, sizeof(buf), "^{\"t\":%lu,\"event\":\"%s\",\"%s\":\"%s\",\"%s\":\"%s\"}\n",
+             millis(), type, k1, v1, k2, v2);
+  } else {
+    snprintf(buf, sizeof(buf), "^{\"t\":%lu,\"event\":\"%s\",\"%s\":\"%s\"}\n",
+             millis(), type, k1, v1);
+  }
+  Serial.print(buf);
+}
+
+void sendJsonOverUart(unsigned long now) {
+  char buf[600];
+  int n = snprintf(
+    buf, sizeof(buf),
+    "^{\"t\":%lu,"
+    "\"type\":\"state\","
+    "\"mode\":\"%s\",\"started\":%s,"
+    "\"sp\":[%.1f,%.1f],\"rpm\":[%.2f,%.2f],"
+    "\"w\":%ld,"
+    "\"s\":[%d,%d,%d,%d,%d,%d,%d],"
+    "\"TB\":%.3f,\"x\":%.3f,"
+    "\"ic\":%d,"
+    "\"e3\":%.5f}\n",
+    now,
+    modeName(mode), started ? "true" : "false",
+    spL_rpm, spR_rpm, L_rpm, R_rpm,
+    weight_In_g,
+    s[1], s[2], s[3], s[4], s[5], s[6], s[7],
+    TB, x,
+    intersection_count,
+    e3_dbg);
+  if (n > 0) Serial.write((uint8_t*)buf, (size_t)n);
+}
+
+/* ========================= Encoder ISRs ========================= */
+void IRAM_ATTR L_handleEncoder() {
+  int a = digitalRead(L_ENC_A), b = digitalRead(L_ENC_B);
+  if (a != L_lastA) {
+    L_counts += (a == b) ? +1 : -1;
+    L_lastA = a;
+  }
+}
+void IRAM_ATTR R_handleEncoder() {
+  int a = digitalRead(R_ENC_A), b = digitalRead(R_ENC_B);
+  if (a != R_lastA) {
+    R_counts += (a == b) ? +1 : -1;
+    R_lastA = a;
+  }
+}
+
+/* ========================= Motor helpers ========================= */
+inline void writePWM(int pin, int duty) {
+  duty = constrain(duty, 0, 255);
+  analogWrite(pin, duty);
+}
+void leftDrivePWM(int pwm) {
+  if (pwm > 0) {
+    digitalWrite(L_IN1, LOW);
+    digitalWrite(L_IN2, HIGH);
+    writePWM(L_PWM, pwm);
+  } else if (pwm < 0) {
+    digitalWrite(L_IN1, HIGH);
+    digitalWrite(L_IN2, LOW);
+    writePWM(L_PWM, -pwm);
+  } else {
+    digitalWrite(L_IN1, LOW);
+    digitalWrite(L_IN2, LOW);
+    writePWM(L_PWM, 0);
+  }
+}
+void rightDrivePWM(int pwm) {
+  if (pwm > 0) {
+    digitalWrite(R_IN1, HIGH);
+    digitalWrite(R_IN2, LOW);
+    writePWM(R_PWM, pwm);
+  } else if (pwm < 0) {
+    digitalWrite(R_IN1, LOW);
+    digitalWrite(R_IN2, HIGH);
+    writePWM(R_PWM, -pwm);
+  } else {
+    digitalWrite(R_IN1, LOW);
+    digitalWrite(R_IN2, LOW);
+    writePWM(R_PWM, 0);
+  }
+}
+void stopBoth() {
+  leftDrivePWM(0);
+  rightDrivePWM(0);
+}
+void leftShortBrake(int pwm) {
+  digitalWrite(L_IN1, HIGH);
+  digitalWrite(L_IN2, HIGH);
+  writePWM(L_PWM, constrain(pwm, 0, 255));
+}
+void rightShortBrake(int pwm) {
+  digitalWrite(R_IN1, HIGH);
+  digitalWrite(R_IN2, HIGH);
+  writePWM(R_PWM, constrain(pwm, 0, 255));
+}
+void shortBrakeBoth(int pwm) {
+  leftShortBrake(pwm);
+  rightShortBrake(pwm);
+}
+
+/* ========================= Button ========================= */
+void handleStartButton() {
+  unsigned long now = millis();
+  int raw = digitalRead(BTN_PIN);
+
+  if (raw != btn_stable) {
+    if (now - btn_change_ms >= DEBOUNCE_MS) {
+      btn_prev = btn_stable;
+      btn_stable = raw;
+      btn_change_ms = now;
+      if (!boot_armed) {
+        if ((now - boot_ms) > BOOT_LOCK_MS && btn_stable == HIGH) boot_armed = true;
+      } else {
+        if (btn_prev == HIGH && btn_stable == LOW) {
+          started = !started;
+          sendEvent("started_change", "started", started ? "true" : "false");
+
+          // Reset giao lộ & hướng mỗi lần nhấn
+          intersection_count = 0;
+          in_intersection = false;
+          ic2_latched = false;
+          delivery_dir = DIR_NONE;
+
+          if (!started) {
+            mode = IDLE;
+            pidL.reset();
+            pidR.reset();
+            e_prev = 0;
+            e2_prev = 0;
+            e3_dbg = 0;  // <<< reset đạo hàm khi dừng
+            in_approach = false;
+            approach_p = 0.0f;
+            shortBrakeBoth(120);
+            delay(50);
+            stopBoth();
+          } else {
+            mode = RUN;
+            run_start_ms = millis();  // <<< đánh dấu thời điểm vào RUN
+            pidL.reset();
+            pidR.reset();
+            e_prev = 0;
+            e2_prev = x;
+            e3_dbg = 0;  // <<< reset đạo hàm khi bắt đầu chạy
+            in_approach = false;
+            approach_p = 0.0f;
+            // Soft-start bắt đầu từ 0 -> 70
+            speed_cmd_rpm = 0.0;
+            first_run_after_boot = false;  // nếu chỉ muốn ramp lần đầu, dùng flag này
+          }
+        }
+      }
+    }
+  } else {
+    btn_change_ms = now;
+  }
+}
+
+/* ========================= Đọc line & tính TB/x ========================= */
+void readLineSensors() {
+  s[1] = analogRead(ss1);
+  s[2] = analogRead(ss2);
+  s[3] = analogRead(ss3);
+  s[4] = analogRead(ss4);
+  s[5] = analogRead(ss5);
+  s[6] = analogRead(ss6);
+  s[7] = analogRead(ss7);
+
+  D = 0;
+  for (int i = 1; i <= 7; i++) {
+    d[i] = (s[i] > threshold) ? 1 : 0;
+    D += d[i];
+  }
+
+  sensorValue1 = 123.4285 + 1.1743 * (s[1] - 36);
+  sensorValue2 = 123.4285 + 1.4031 * (s[2] - 32);
+  sensorValue3 = 123.4285 + 0.9846 * (s[3] - 33);
+  sensorValue4 = 123.4285 + 1.2453 * (s[4] - 30);
+  sensorValue5 = 123.4285 + 1.0685 * (s[5] - 41);
+  sensorValue6 = 123.4285 + 0.9738 * (s[6] - 13);
+  sensorValue7 = 123.4285 + 0.9743 * (s[7] - 15);
+
+  float num = 3 * (sensorValue1 - sensorValue7) + 2 * (sensorValue2 - sensorValue6) + (sensorValue3 - sensorValue5);
+  float den = sensorValue1 + sensorValue2 + sensorValue3 + sensorValue4 + sensorValue5 + sensorValue6 + sensorValue7;
+
+  TB = (den != 0.0f) ? (num * 13.0f / den) : 0.0f;
+
+  if (D == 0) x = 999;                         // mất line
+  else if (D >= INTERSECTION_D_MIN) x = 1000;  // giao lộ (sẽ xác nhận liên tiếp qua d4 ở hàm khác)
+  else x = TB * 0.9822 - 1.6627;
+}
+
+/* ========================= HX711 non-blocking ========================= */
+void pollLoadcell() {
+  if (millis() - hx_last_ms < HX_MIN_INTERVAL_MS) return;
+  if (scale.is_ready()) {
+    weight_In_g = scale.get_units(1);
+    hx_last_ms = millis();
+  }
+}
+
+/* ========================= e3 = atan(Δx)/dt (có lọc) ========================= */
+// >>> Thêm lọc đạo hàm để tránh vọt khi vừa vào RUN hoặc dt nhỏ <<<
+double de_lpf_prev = 0.0;
+const double DE_LPF_ALPHA = 0.3;  // 0..1 (nhỏ -> mượt hơn)
+
+void updateErrors(double dt_s) {
+  if (dt_s <= 0.0) return;
+
+  double e2 = x;
+
+  // nếu x “đặc biệt” (999/1000) coi như không tính đạo hàm để tránh spike
+  if (e2 == 999 || e2 == 1000) {
+    e3_dbg = 0.0;
+    e2_prev = e2;
+    return;
+  }
+
+  double de_raw = atan(e2 - e2_prev) / dt_s;  // đạo hàm “mềm”
+  double de_flt = DE_LPF_ALPHA * de_raw + (1.0 - DE_LPF_ALPHA) * de_lpf_prev;
+  de_lpf_prev = de_flt;
+
+  e3_dbg = de_flt;
+  e2_prev = e2;
+}
+
+/* ========================= Lyapunov -> setpoint rpm ========================= */
+double clamp(double v, double lo, double hi) {
+  return v < lo ? lo : (v > hi ? hi : v);
+}
+
+void lyapunovControllerToSetpoints(double dt_s) {
+  // chỉ gọi khi RUN và có line
+  if (x == 999 || x == 1000) {
+    spL_rpm = 0;
+    spR_rpm = 0;
+    return;
+  }
+  if (dt_s <= 0.0) {
+    spL_rpm = spR_rpm = 0;
+    return;
+  }
+
+  // e theo chuẩn hóa nhỏ để K3*de không vọt
+  double e = x / 255.0;
+  double de = (e - e_prev) / dt_s;
+
+  // lọc de thêm một chút để an toàn (chung hệ số với e3 hoặc khác tuỳ ý)
+  static double de_prev = 0.0;
+  double de_f = 0.5 * de + 0.5 * de_prev;
+  de_prev = de_f;
+
+  // w_cmd và kẹp để tránh “jump”
+  double w_cmd = K1 * atan(e) + K2 * e + K3 * de_f;
+  w_cmd = clamp(w_cmd, -1.2, 1.2);  // <<< kẹp thêm tầng 1
+
+  e_prev = e;
+
+  // chênh rpm
+  double turn = TURN_GAIN * w_cmd;
+  turn = clamp(turn, -120.0, 120.0);  // <<< kẹp thêm tầng 2
+
+  spL_rpm = speed_cmd_rpm - turn;
+  spR_rpm = speed_cmd_rpm + turn;
+
+  spL_rpm = clamp(spL_rpm, 0.0, 300.0);
+  spR_rpm = clamp(spR_rpm, 0.0, 300.0);
+}
+
+/* ========================= Giao lộ: chỉ chuỗi liên tiếp qua d4 ========================= */
+inline bool isApproachPattern() {
+  int center = d[3] + d[4] + d[5];
+  return (D >= 2) && (center >= 2);
+}
+
+// Độ dài chuỗi 1 liên tiếp "bao trùm" cảm biến giữa d4
+int centeredConsecutiveRun() {
+  if (!d[4]) return 0;  // không có d4 -> không coi là giao lộ
+  int len = 1;
+  for (int i = 3; i >= 1 && d[i]; --i) len++;  // trái
+  for (int i = 5; i <= 7 && d[i]; ++i) len++;  // phải
+  return len;
+}
+
+void updateIntersectionEdge() {
+  int run = centeredConsecutiveRun();
+
+  // vào giao lộ
+  if (!in_intersection && run >= INTERSECTION_ENTER_D) {
+    in_intersection = true;
+    if (intersection_count < IC_MAX) {
+      intersection_count++;
+      if (intersection_count == 2) ic2_latched = true;
+    }
+  }
+  // rời giao lộ
+  else if (in_intersection && (run <= INTERSECTION_EXIT_D)) {
+    in_intersection = false;
+  }
+}
+
+/* ========================= Hướng giao theo cân ========================= */
+void decideDeliveryDir(long w) {
+  if (w >= 800 && w <= 1500) delivery_dir = DIR_RIGHT;       // ~1kg
+  else if (w >= 1700 && w <= 2600) delivery_dir = DIR_LEFT;  // ~2kg
+  else delivery_dir = DIR_RIGHT;                             // fallback
+}
+
+/* ========================= Setup ========================= */
+void setup() {
+  Serial.begin(115200);
+
+  pinMode(BTN_PIN, INPUT_PULLUP);
+  boot_ms = millis();
+  btn_change_ms = boot_ms;
+
+  // Motor pins
+  pinMode(L_IN1, OUTPUT);
+  pinMode(L_IN2, OUTPUT);
+  pinMode(L_PWM, OUTPUT);
+  pinMode(R_IN1, OUTPUT);
+  pinMode(R_IN2, OUTPUT);
+  pinMode(R_PWM, OUTPUT);
+  stopBoth();
+
+  // Encoders
+  pinMode(L_ENC_A, INPUT);
+  pinMode(L_ENC_B, INPUT);
+  L_lastA = digitalRead(L_ENC_A);
+  attachInterrupt(digitalPinToInterrupt(L_ENC_A), L_handleEncoder, CHANGE);
+
+  pinMode(R_ENC_A, INPUT_PULLUP);
+  pinMode(R_ENC_B, INPUT_PULLUP);
+  R_lastA = digitalRead(R_ENC_A);
+  attachInterrupt(digitalPinToInterrupt(R_ENC_A), R_handleEncoder, CHANGE);
+
+  // Sensors
+  pinMode(ss1, INPUT);
+  pinMode(ss2, INPUT);
+  pinMode(ss3, INPUT);
+  pinMode(ss4, INPUT);
+  pinMode(ss5, INPUT);
+  pinMode(ss6, INPUT);
+  pinMode(ss7, INPUT);
+
+  // HX711
+  scale.begin(DATA_PIN, CLOCK_PIN);
+  scale.set_scale(CALIBRATION_FACTOR);
+  scale.tare();
+
+  // PID
+  pidL.setGains(KpLe, KiLe, KdLe);
+  pidR.setGains(KpRi, KiRi, KdRi);
+
+  // Bảo đảm KHÔNG chạy khi cấp nguồn
+  started = false;
+  mode = IDLE;
+  shortBrakeBoth(120);
+  delay(50);
+  stopBoth();
+}
+
+/* ========================= Loop ========================= */
+void loop() {
+  handleStartButton();
+  readLineSensors();
+  pollLoadcell();
+
+  unsigned long now = millis();
+
+  // giao lộ cạnh
+  updateIntersectionEdge();
+
+  /* ======= Chưa start: an toàn ======= */
+  if (!started) {
+    mode = IDLE;
+    pidL.reset();
+    pidR.reset();
+    e_prev = 0;
+    e2_prev = x;
+    e3_dbg = 0;  // giữ đạo hàm yên khi đứng
+    brake_active = false;
+    in_approach = false;
+    approach_p = 0.0f;
+    stopBoth();
+
+    if (now - t_sample_prev >= SAMPLE_INTERVAL_MS) {
+      sendJsonOverUart(now);
+      t_sample_prev = now;
+    }
+    delay(1);
+    return;
+  }
+
+  // ====== Cập nhật RPM ~100Hz ======
+  if (now - t_rpm_prev >= RPM_DT_MS) {
+    static long L_last = 0, R_last = 0;
+    long dL = L_counts - L_last;
+    L_last = L_counts;
+    long dR = R_counts - R_last;
+    R_last = R_counts;
+
+    double dt_s = (now - t_rpm_prev) / 1000.0;
+    t_rpm_prev = now;
+
+    // chống dt_s bất thường (sau sleep/lag)
+    if (dt_s <= 0.0 || dt_s > 0.2) dt_s = 0.01;
+
+    L_rpm = (dL / (double)L_PPR) * (60.0 / dt_s);
+    R_rpm = (dR / (double)R_PPR) * (60.0 / dt_s);
+
+    // cập nhật đạo hàm e3 (lọc)
+    updateErrors(dt_s);
+    prev_mode = mode;
+
+    // LOST_LINE ưu tiên dừng
+    if (x == 999 && mode != TURN_LEFT && mode != TURN_RIGHT && mode != DELIVERED) {
+      mode = LOST_LINE;
+    }
+
+    switch (mode) {
+      case IDLE:
+        spL_rpm = spR_rpm = 0;
+        pidL.reset();
+        pidR.reset();
+        brake_active = false;
+        stopBoth();
+        break;
+
+      case LOST_LINE:
+        shortBrakeBoth(255);  // full brake
+        spL_rpm = spR_rpm = 0;
+        pidL.reset();
+        pidR.reset();
+        brake_active = true;
+        break;
+
+      case RUN:
+        {
+          // LẦN 1 giao lộ -> thắng cứng & chờ cân
+          if (x == 1000 && intersection_count == 1) {
+            mode = HARD_BRAKE;
+            t_brake_until = now + BRAKE_TIME_MS;
+            pidL.reset();
+            pidR.reset();
+            break;
+          }
+          // LẦN 2 -> rẽ theo cân
+          if (x == 1000 && intersection_count == 2) {
+            if (delivery_dir == DIR_NONE) decideDeliveryDir(weight_In_g);
+            mode = (delivery_dir == DIR_LEFT) ? TURN_LEFT : TURN_RIGHT;
+            t_turn_end = now + TURN_TIME_MS;
+            brake_active = false;
+            stopBoth();
+            break;
+          }
+
+          // Kết thúc: qua >=2 giao lộ + mất line
+          if (intersection_count >= 2 && x == 999) {
+            mode = DELIVERED;
+            stopBoth();
+            break;
+          }
+
+          // ---- Soft-start: ramp tốc độ nền 0 -> 70 rpm trong RAMP_MS ----
+          {
+            float a = (float)(now - run_start_ms) / RAMP_MS;
+            if (a < 0.0f) a = 0.0f;
+            if (a > 1.0f) a = 1.0f;
+            double base_ramped = speed_base_rpm_nominal * a;
+
+            // detect “approach” để giảm tốc
+            if (!in_approach && isApproachPattern()) {
+              in_approach = true;
+              t_approach_start = now;
+            }
+            if (in_approach && !isApproachPattern()) in_approach = false;
+
+            if (in_approach) {
+              unsigned long dt = now - t_approach_start;
+              float ap = (float)dt / (float)APPROACH_DECEL_MS;
+              if (ap > 1.0f) ap = 1.0f;
+              approach_p = ap;
+            } else approach_p = 0.0f;
+
+            speed_cmd_rpm = base_ramped;
+            if (in_approach) {
+              double ap = (double)approach_p;
+              speed_cmd_rpm = base_ramped * (1.0 - ap) + MIN_SPEED_APPROACH_RPM * ap;
+            }
+          }
+
+          // -> Lyapunov tính setpoints (đã có kẹp/ lọc bên trong)
+          lyapunovControllerToSetpoints(dt_s);
+
+          // -> PID tốc độ
+          {
+            int cmdL = pidL.update(spL_rpm, L_rpm, dt_s);
+            int cmdR = pidR.update(spR_rpm, R_rpm, dt_s);
+            brake_active = false;
+            leftDrivePWM(cmdL);
+            rightDrivePWM(cmdR);
+          }
+          break;
+        }
+
+      case HARD_BRAKE:
+        shortBrakeBoth(10);
+        shortBrakeBoth(20);
+        shortBrakeBoth(30);
+        spL_rpm = spR_rpm = 0;
+        brake_active = true;
+        if ((long)(now - t_brake_until) >= 0) {
+          mode = WAIT_LOAD;
+          brake_active = false;
+          stopBoth();
+          w_ref = weight_In_g;
+          w_stable_start = now;
+          w_is_stable = false;
+          w_stabilized = 0;
+        }
+        break;
+
+      case WAIT_LOAD:
+        {
+          if (abs(weight_In_g - w_ref) > WEIGHT_STABLE_EPS) {
+            w_ref = weight_In_g;
+            w_stable_start = now;
+            w_is_stable = false;
+          } else {
+            if (!w_is_stable && (now - w_stable_start) >= WEIGHT_STABLE_MS) {
+              w_is_stable = true;
+              w_stabilized = weight_In_g;
+              decideDeliveryDir(w_stabilized);
+            }
+          }
+          spL_rpm = spR_rpm = 0;
+          brake_active = false;
+          stopBoth();
+
+          if (w_is_stable && w_stabilized >= LOAD_RESUME_MIN) {
+            mode = RUN;
+            run_start_ms = now;  // <<< reset mốc ramp mỗi lần rời WAIT_LOAD
+            pidL.reset();
+            pidR.reset();
+            e_prev = 0;
+            e2_prev = x;
+            e3_dbg = 0;  // <<< reset đạo hàm
+            in_approach = false;
+            approach_p = 0.0f;
+            speed_cmd_rpm = 0.0;
+          }
+          break;
+        }
+
+      case TURN_LEFT:
+        {
+          leftDrivePWM(70);
+          rightDrivePWM(120);
+          int center = d[3] + d[4] + d[5];
+          bool line_single_center = (D <= 2) && (center >= 1);
+          if (line_single_center || ((long)(now - t_turn_end) >= 0)) {
+            stopBoth();
+            mode = RUN;
+            run_start_ms = now;
+            pidL.reset();
+            pidR.reset();
+            e_prev = 0;
+            e2_prev = x;
+            e3_dbg = 0;           // <<< reset đạo hàm sau cua
+            speed_cmd_rpm = 0.0;  // <<< cho ramp lại ngắn
+          }
+          break;
+        }
+
+      case TURN_RIGHT:
+        {
+          leftDrivePWM(125);
+          rightDrivePWM(55);
+          int center = d[5] + d[4] + d[3];
+          bool line_single_center = (D <= 2) && (center >= 1);
+          if (line_single_center || ((long)(now - t_turn_end) >= 0)) {
+            stopBoth();
+            mode = RUN;
+            run_start_ms = now;
+            pidL.reset();
+            pidR.reset();
+            e_prev = 0;
+            e2_prev = x;
+            e3_dbg = 0;           // <<< reset đạo hàm sau cua
+            speed_cmd_rpm = 0.0;  // <<< cho ramp lại ngắn
+          }
+          break;
+        }
+
+      case DELIVERED:
+        shortBrakeBoth(255);  
+        spL_rpm = spR_rpm = 0;
+        brake_active = true;
+        break;
+
+      default:
+        spL_rpm = spR_rpm = 0;
+        pidL.reset();
+        pidR.reset();
+        brake_active = false;
+        stopBoth();
+        break;
+    }
+
+    // log đổi mode
+    if (mode != prev_mode) {
+      sendEvent("mode_change", "from", modeName(prev_mode), "to", modeName(mode));
+      prev_mode = mode;
+    }
+  }
+
+  // Telemetry 10 Hz
+  if (now - t_sample_prev >= SAMPLE_INTERVAL_MS) {
+    sendJsonOverUart(now);
+    t_sample_prev = now;
+  }
+
+  delay(1);
+}
