@@ -1,0 +1,24 @@
+{
+	"folders": [
+		{
+			"path": "../../../../courses/dacn/code"
+		},
+		{
+			"name": "251030-124841-megaatmega2560",
+			"path": "../../251030-124841-megaatmega2560"
+		},
+		{
+			"name": "esp_line-following",
+			"path": ".."
+		}
+	],
+	"settings": {
+		"workbench.colorTheme": "Dracula Theme",
+		"terminal.integrated.fontFamily": "JetBrains Mono",
+		"terminal.integrated.fontSize": 13,
+		"window.zoomLevel": 0,
+		"files.associations": {
+			"string.h": "c"
+		}
+	}
+}
