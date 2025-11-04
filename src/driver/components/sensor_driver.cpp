@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <stdint.h>
 #include "pins.h"
+#include "error_codes.h"
 
 // ===================== GLOBAL VARIABLES =====================
 int16_t lineSensor[7];  // Front array sensors
@@ -14,6 +15,11 @@ const uint8_t irPins[2] = {IR1_PIN, IR2_PIN};  // Outputs from two muxes
 
 // ===================== READ MUX CHANNEL =====================
 int16_t readMux(uint8_t channel, uint8_t arrayIdx) {
+  // Validate parameters
+  if (channel >= 7 || arrayIdx > 1) {
+    return ERROR_INVALID_PARAMETER;  // Return error code instead of invalid value
+  }
+  
   for (uint8_t i = 0; i < 3; i++)
     digitalWrite(muxPins[i], (channel >> i) & 1);
   delayMicroseconds(5);
@@ -21,19 +27,34 @@ int16_t readMux(uint8_t channel, uint8_t arrayIdx) {
 }
 
 // ===================== READ LINE SENSORS =====================
-void readLineSensors() {
+int8_t readLineSensors() {
   // 2 sets of 7 sensors connected via 2 multiplexers with shared select lines
   const uint8_t NUM_IR = 7;  // 7 TCRT5000 sensors per array
   
   for (uint8_t i = 0; i < NUM_IR; i++) {
     // Both muxes get the same selection signals, but we read from different output pins
-    lineSensor[i] = readMux(i, 0);  // Read from front array (first mux output)
-    midSensor[i] = readMux(i, 1);   // Read from middle array (second mux output)
+    int16_t lineValue = readMux(i, 0);  // Read from front array (first mux output)
+    if (lineValue < 0) {  // Check for error code returned by readMux
+      return ERROR_SENSOR_READ_FAILED;
+    }
+    lineSensor[i] = lineValue;
+    
+    int16_t midValue = readMux(i, 1);   // Read from middle array (second mux output)
+    if (midValue < 0) {  // Check for error code returned by readMux
+      return ERROR_SENSOR_READ_FAILED;
+    }
+    midSensor[i] = midValue;
   }
+  
+  return ERROR_SUCCESS;
 }
 
 // ===================== READ SONAR =====================
-float getSonarDistance() {
+int8_t getSonarDistance(float* distance) {
+  if (distance == nullptr) {
+    return ERROR_INVALID_PARAMETER;
+  }
+  
   pinMode(ULTRASONIC_PIN, OUTPUT);
   digitalWrite(ULTRASONIC_PIN, LOW);
   delayMicroseconds(2);
@@ -43,12 +64,32 @@ float getSonarDistance() {
 
   pinMode(ULTRASONIC_PIN, INPUT);
   uint32_t duration = pulseIn(ULTRASONIC_PIN, HIGH, 30000);
-  return duration * 0.034 / 2.0;
+  
+  if (duration == 0) {
+    // Timeout occurred
+    *distance = 0.0;
+    return ERROR_ULTRASONIC_TIMEOUT;
+  }
+  
+  *distance = duration * 0.034 / 2.0;
+  return ERROR_SUCCESS;
 }
 
 // ===================== DETECTION FUNCTIONS =====================
 bool detectObstacle() {
-  sonarDistance = getSonarDistance();
+  float distance = 0.0;
+  int8_t result = getSonarDistance(&distance);
+  if (result != ERROR_SUCCESS) {
+    #ifdef DEBUG_ENABLED
+    Serial.print("Sensor: getSonarDistance failed with error code: ");
+    Serial.println(result);
+    #endif
+    
+    // If there's an error getting distance, we assume no obstacle for safety
+    return false;
+  }
+  
+  sonarDistance = distance;
   const uint8_t SONAR_TH_OBS = 45;   // cm
   return (sonarDistance > 0 && sonarDistance < SONAR_TH_OBS);
 }

@@ -1,6 +1,6 @@
 {
     // 🎨 Dracula theme
-    "workbench.colorTheme": "Dracula Theme",
+    "workbench.colorTheme": "Default Light Modern",
 
     // 🅰️ JetBrains Mono font setup
     "editor.fontFamily": "'JetBrains Mono', Consolas, 'Courier New', monospace",

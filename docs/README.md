@@ -34,7 +34,7 @@ Src/
 
 ## Logic and State Machines
 
-For detailed information about the pseudo-simplified logic and state machine implementation, see [Logic_and_State_Machines.md](Logic_and_State_Machines.md).
+For detailed information about the pseudo-simplified logic and state machine implementation, see [logic_and_state_machines.md](logic_and_state_machines.md).
 
 ## Configuration
 

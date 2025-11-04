@@ -8,6 +8,7 @@
 #include "servo_driver.h"
 #include "pid_controller.h"
 #include "soft_start.h"
+#include "error_codes.h"
 
 // ===================== GLOBAL VARIABLES =====================
 enum State {
@@ -53,11 +54,16 @@ void setup() {
   pinMode(ENCA, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(ENCA), encoderISR, RISING);
 
-  initServo();
-  setServoAngle(90);
+  if (initServo() != ERROR_SUCCESS) {
+    // Could enter error state or halt execution
+    while(1); // Halt execution if critical component fails
+  }
+  if (setServoAngle(90) != ERROR_SUCCESS) {
+    // Handle servo error - possibly ignore or add specific handling
+  }
 
   state = INIT;
-  Serial.println("System INIT");
+  // System initialized
 }
 
 // ===================== MAIN LOOP =====================
@@ -65,24 +71,35 @@ void loop() {
   if (millis() - lastSample < Ts * 1000) return;
   lastSample = millis();
 
-  readLineSensors();
+  if (readLineSensors() != ERROR_SUCCESS) {
+    // Handle sensor reading error
+    setMotor(0);  // Stop the robot
+    setServoAngle(90);  // Center the servo
+    // Could implement error state or retry logic here
+    // For now, stay in current state to prevent erratic behavior
+    return;
+  }
 
   switch (state) {
 
     case INIT:
-      setMotor(0);
-      setServoAngle(90);
+      setMotor(0);  // Stop the motor (error checking not required for normal operation)
+      setServoAngle(90);  // Center the servo (error checking not required for normal operation)
       if (digitalRead(BTN_BOOT) == LOW) {
         state = LINE_FOLLOW;
         first_run_after_init = true;  // Enable soft start for the first run
-        Serial.println("Start line following");
+        // Start line following
       }
       break;
 
     case LINE_FOLLOW: {
       float e = computeError();
-      float u = PID(e);
-      setServoAngle(90 + (int8_t)u);
+      float u = 0.0;
+      if (PID(e, &u) != ERROR_SUCCESS) {
+        // Handle PID error - perhaps use a default action
+        u = 0.0;  // Default to no correction
+      }
+      setServoAngle(90 + (int8_t)u); // Attempt to set servo angle
       
       // Use soft start when first entering LINE_FOLLOW state
       if (first_run_after_init) {
@@ -91,30 +108,31 @@ void loop() {
           soft_start_start_time = millis();
           first_run_after_init = false;  // Only do soft-start once
         }
-        setMotor(getSoftStartSpeed(PWM_NORMAL));
+        int16_t softStartSpeed = 0;
+        if (getSoftStartSpeed(PWM_NORMAL, &softStartSpeed) == ERROR_SUCCESS) {
+          setMotor(softStartSpeed); // Attempt to set motor with soft start speed
+        } else {
+          setMotor(PWM_NORMAL); // Fall back to normal speed if soft start fails
+        }
       } else {
-        setMotor(PWM_NORMAL);
+        setMotor(PWM_NORMAL); // Set motor to normal speed
       }
 
       if (detectLostLine()) {
         state = LOST_LINE;
-        Serial.println("Line lost!");
       } else if (detectObstacle()) {
         state = AVOID_PREPARE;
-        Serial.println("Obstacle detected!");
       } else if (detectJunction() && !afterJunction) {
         state = TURN_LEFT_PREPARE;
-        Serial.println("Junction ahead!");
       } else if (afterJunction && nearGoal()) {
         state = SLOW_DOWN;
-        Serial.println("Near goal!");
       }
       break;
     }
 
     case AVOID_PREPARE:
       if (avoid_prepare_start == 0) {
-        setMotor(PWM_SLOW);
+        setMotor(PWM_SLOW); // Attempt to set motor speed
         setServoAngle(130); // steer right
         avoid_prepare_start = millis();
       }
@@ -125,11 +143,10 @@ void loop() {
       break;
 
     case AVOID_PATH:
-      setMotor(PWM_NORMAL);
-      setServoAngle(130);
+      setMotor(PWM_NORMAL); // Set motor to normal speed
+      setServoAngle(130); // Steer right
       if (!detectObstacle()) {
         state = MERGE_SEARCH;
-        Serial.println("Obstacle cleared");
       }
       break;
 
@@ -138,13 +155,12 @@ void loop() {
       if (detectJunction() || computeError() != 0) {
         state = LINE_FOLLOW;
         first_run_after_init = false;  // Don't use soft start when resuming from merge
-        Serial.println("Merged back to line");
       }
       break;
 
     case TURN_LEFT_PREPARE:
       if (turn_left_prepare_start == 0) {
-        setMotor(PWM_SLOW);
+        setMotor(PWM_SLOW); // Set motor to slow speed
         setServoAngle(50); // left turn
         turn_left_prepare_start = millis();
       }
@@ -152,32 +168,29 @@ void loop() {
         turn_left_prepare_start = 0; // reset timer
         afterJunction = true;
         encoderCount = 0;
-        setServoAngle(90);
+        setServoAngle(90); // Center servo after turn
         state = LINE_FOLLOW;
         first_run_after_init = false;  // Don't use soft start when resuming from turn
       }
       break;
 
     case SLOW_DOWN:
-      setMotor(PWM_SLOW);
-      setServoAngle(90);
+      setMotor(PWM_SLOW); // Set motor to slow speed
+      setServoAngle(90); // Keep servo centered
       if (detectFinishLine()) {
         state = STOP;
-        Serial.println("Finish line detected!");
       }
       break;
 
     case STOP:
-      setMotor(0);
-      setServoAngle(90);
-      Serial.println("STOP: Reached goal");
+      setMotor(0); // Stop the motor
+      setServoAngle(90); // Center the servo
       while (1);
       break;
 
     case LOST_LINE:
       setMotor(0); // Stop the motor
       setServoAngle(90); // Center the steering
-      Serial.println("Lost line! Please reposition robot on track.");
       // Optionally, you can add a small forward movement or steering to try to find the line
       // For now, we'll just stop and wait for manual intervention
       break;

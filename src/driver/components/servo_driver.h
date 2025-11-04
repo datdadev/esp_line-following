@@ -2,11 +2,12 @@
 #define SERVO_DRIVER_H
 
 #include <ESP32Servo.h>
+#include "error_codes.h"
 
 // ===================== SERVO CONTROL =====================
 extern Servo steering;
 
-void initServo();
-void setServoAngle(int8_t angle);
+int8_t initServo();  // Returns error code
+int8_t setServoAngle(int8_t angle);  // Returns error code
 
 #endif // SERVO_DRIVER_H

@@ -2,9 +2,10 @@
 #define MOTOR_DRIVER_H
 
 #include <stdint.h>
+#include "error_codes.h"
 
 // ===================== MOTOR CONTROL =====================
-void setMotor(int16_t pwm);
-void hardBrake();
+int8_t setMotor(int16_t pwm);  // Returns error code
+int8_t hardBrake();  // Returns error code
 
 #endif // MOTOR_DRIVER_H

@@ -46,6 +46,14 @@ pio run
 pio run -e motor_test
 ```
 
+## Documentation
+
+Additional documentation can be found in the `Docs/` directory:
+- [include_readme.md](docs/include_readme.md) - Information about header files
+- [lib_readme.md](docs/lib_readme.md) - Information about project libraries
+- [test_readme.md](docs/test_readme.md) - Information about testing
+- [logic_and_state_machines.md](docs/logic_and_state_machines.md) - Detailed state machine implementation
+
 ## Configuration
 
 System parameters can be adjusted in `Config/system_config.h`
