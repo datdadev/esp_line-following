@@ -1,6 +1,6 @@
-#include "motor_driver.h"
 #include <Arduino.h>
-#include "../../../Inc/pins.h"
+#include "pins.h"
+#include "motor_driver.h"
 
 // ===================== MOTOR CONTROL =====================
 void setMotor(int16_t pwm) {

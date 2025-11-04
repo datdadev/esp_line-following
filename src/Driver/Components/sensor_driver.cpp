@@ -1,15 +1,16 @@
 #include "sensor_driver.h"
 #include <Arduino.h>
 #include <stdint.h>
-#include "../../../Inc/pins.h"
+#include "pins.h"
 
 // ===================== GLOBAL VARIABLES =====================
-int16_t lineSensor[7];
+int16_t lineSensor[7];  // Front array sensors
+int16_t midSensor[7];   // Middle array sensors
 float sonarDistance = 0.0;
 
 // ===================== MUX SELECT PINS =====================
 const uint8_t muxPins[3] = {MUX_S0, MUX_S1, MUX_S2};
-const uint8_t irPins[2] = {IR1_PIN, IR2_PIN};
+const uint8_t irPins[2] = {IR1_PIN, IR2_PIN};  // Outputs from two muxes
 
 // ===================== READ MUX CHANNEL =====================
 int16_t readMux(uint8_t channel, uint8_t arrayIdx) {
@@ -21,13 +22,13 @@ int16_t readMux(uint8_t channel, uint8_t arrayIdx) {
 
 // ===================== READ LINE SENSORS =====================
 void readLineSensors() {
-  // Suppose 7 sensors are connected via 2 multiplexers (example)
-  const uint8_t NUM_IR = 7;  // 7 TCRT5000 sensors
+  // 2 sets of 7 sensors connected via 2 multiplexers with shared select lines
+  const uint8_t NUM_IR = 7;  // 7 TCRT5000 sensors per array
   
   for (uint8_t i = 0; i < NUM_IR; i++) {
-    uint8_t arrayIdx = (i < 4) ? 0 : 1;
-    uint8_t ch = (i < 4) ? i : (i - 4);
-    lineSensor[i] = readMux(ch, arrayIdx);
+    // Both muxes get the same selection signals, but we read from different output pins
+    lineSensor[i] = readMux(i, 0);  // Read from front array (first mux output)
+    midSensor[i] = readMux(i, 1);   // Read from middle array (second mux output)
   }
 }
 

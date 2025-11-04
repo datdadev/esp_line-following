@@ -1,6 +1,6 @@
 #include <Arduino.h>
+#include "system_config.h"
 #include "pid_controller.h"
-#include "../Config/system_config.h"
 
 // ===================== PID CONTROLLER =====================
 float prevE = 0.0, integral = 0.0;

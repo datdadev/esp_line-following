@@ -1,6 +1,6 @@
 #include <Arduino.h>
+#include "system_config.h"
 #include "soft_start.h"
-#include "../Config/system_config.h"
 
 // ===================== SOFT START =====================
 bool soft_start_active = false;

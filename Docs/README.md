@@ -32,6 +32,10 @@ Src/
     └── pid_controller.cpp
 ```
 
+## Logic and State Machines
+
+For detailed information about the pseudo-simplified logic and state machine implementation, see [Logic_and_State_Machines.md](Logic_and_State_Machines.md).
+
 ## Configuration
 
 - **System Parameters**: Config/system_config.h

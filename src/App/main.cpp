@@ -1,12 +1,12 @@
 #include <Arduino.h>
 #include <ESP32Servo.h>
 #include <stdint.h>
-#include "../../Config/system_config.h"
-#include "../../Inc/pins.h"
-#include "../Driver/Devices/motor_driver.h"
-#include "../Driver/Components/sensor_driver.h"
-#include "../Driver/Components/servo_driver.h"
-#include "../MiddleWare/pid_controller.h"
+#include "system_config.h"
+#include "pins.h"
+#include "motor_driver.h"
+#include "sensor_driver.h"
+#include "servo_driver.h"
+#include "pid_controller.h"
 #include "soft_start.h"
 
 // ===================== GLOBAL VARIABLES =====================

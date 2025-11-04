@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include "../../Inc/pins.h"
+#include "pins.h"
 
 // ====================== CONFIG ======================
 constexpr float Ts = 0.01f;          // Sampling period [s]

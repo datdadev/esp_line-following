@@ -9,7 +9,8 @@ void readLineSensors();
 float getSonarDistance();
 
 // ===================== LINE SENSORS =====================
-extern int16_t lineSensor[7];
+extern int16_t lineSensor[7];  // Front array sensors
+extern int16_t midSensor[7];   // Middle array sensors
 extern float sonarDistance;
 
 // ===================== DETECTION FUNCTIONS =====================

@@ -2,8 +2,8 @@
 #define PINS_H
 
 // ================== IR SENSOR ARRAYS ==================
-#define IR1_PIN        32  // MUX output for Array 1
-#define IR2_PIN        33  // MUX output for Array 2
+#define IR1_PIN        32  // MUX output for Array 1 (front)
+#define IR2_PIN        33  // MUX output for Array 2 (middle)
 #define MUX_S0         25
 #define MUX_S1         26
 #define MUX_S2         27

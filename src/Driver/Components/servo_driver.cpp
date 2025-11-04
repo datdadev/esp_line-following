@@ -1,5 +1,5 @@
 #include "servo_driver.h"
-#include "../../../Inc/pins.h"
+#include "pins.h"
 
 // ===================== SERVO CONTROL =====================
 Servo steering;
