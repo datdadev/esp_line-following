@@ -19,7 +19,6 @@ enum State {
 };
 State state = INIT;
 
-int32_t encoderCount = 0;
 bool afterJunction = false;
 bool nearGoalFlag = false;
 uint32_t lastSample = 0;
@@ -31,14 +30,92 @@ uint32_t turn_left_prepare_start = 0;
 // Soft-start variables
 bool first_run_after_init = true;  // To only apply soft-start on first run
 
+// ===================== QUADRATURE ENCODER VARIABLES =====================
+volatile int8_t lastEncoded = 0;
+volatile int32_t encoderCount = 0;
+volatile int16_t lastMSB = 0;
+volatile int16_t lastLSB = 0;
+
+// ===================== ENCODER UTILITIES =====================
+void resetEncoder() {
+  noInterrupts();  // Disable interrupts for atomic operation
+  encoderCount = 0;
+  lastEncoded = (digitalRead(ENCA) << 1) | digitalRead(ENCB);  // Initialize with current state
+  interrupts();   // Re-enable interrupts
+}
+
+// ===================== SPEED CONTROL VARIABLES =====================
+volatile int32_t lastEncoderCount = 0;
+float currentSpeed = 0.0;  // Current speed in m/s
+uint32_t lastSpeedCalcTime = 0;
+
+// ===================== SPEED CONTROL FUNCTIONS =====================
+float calculateSpeed() {
+  // Calculate speed based on encoder counts over time
+  uint32_t currentTime = millis();
+  float deltaTime = (currentTime - lastSpeedCalcTime) / 1000.0; // Convert to seconds
+  
+  if (deltaTime > 0) {
+    noInterrupts();  // Disable interrupts for atomic read
+    int32_t currentCount = encoderCount;
+    interrupts();    // Re-enable interrupts
+    
+    int32_t deltaCount = currentCount - lastEncoderCount;
+    
+    // Calculate distance traveled
+    float wheelRev = deltaCount / COUNTS_PER_REV;  // Wheel revolutions
+    float distance = wheelRev * (WHEEL_DIAMETER * M_PI);  // Distance in meters
+    
+    // Calculate speed in m/s
+    currentSpeed = distance / deltaTime;
+    
+    // Update for next calculation
+    lastEncoderCount = currentCount;
+    lastSpeedCalcTime = currentTime;
+  }
+  
+  return currentSpeed;
+}
+
+void resetSpeedCalculation() {
+  noInterrupts();  // Disable interrupts for atomic operation
+  lastEncoderCount = encoderCount;
+  interrupts();    // Re-enable interrupts
+  lastSpeedCalcTime = millis();
+  currentSpeed = 0.0;
+}
+
 // ===================== NEAR GOAL =====================
 bool nearGoal() {
-  return (afterJunction && encoderCount * 0.05 >= DIST_NEAR_GOAL);
+  // Calculate distance traveled based on encoder counts
+  float wheelRev = encoderCount / COUNTS_PER_REV;  // Wheel revolutions
+  float distanceTraveled = wheelRev * (WHEEL_DIAMETER * M_PI);  // Distance in meters
+  
+  return (afterJunction && distanceTraveled >= DIST_NEAR_GOAL / 100.0); // Convert cm to meters
 }
 
 // ===================== ENCODER ISR =====================
 void IRAM_ATTR encoderISR() {
-  encoderCount++;
+  // Read both encoder pins
+  int16_t MSB = digitalRead(ENCA);  // Most significant bit
+  int16_t LSB = digitalRead(ENCB);  // Least significant bit
+  
+  // Combine the two pin states into a single value
+  int8_t encoded = (MSB << 1) | LSB;
+  int8_t sum = (lastEncoded << 2) | encoded;
+  
+  // Increment or decrement based on the transition pattern
+  // Clockwise/Forward: 00->01->11->10->00 (0->1->3->2->0)
+  if (sum == 0b0001 || sum == 0b0111 || sum == 0b1110 || sum == 0b1000) {
+    encoderCount++;  // Forward direction
+  }
+  // Counter-clockwise/Reverse: 00->10->11->01->00 (0->2->3->1->0)
+  else if (sum == 0b0010 || sum == 0b1011 || sum == 0b1101 || sum == 0b0100) {
+    encoderCount--;  // Reverse direction
+  }
+  
+  // Store the current state for next interrupt
+  lastEncoded = encoded;
 }
 
 // ===================== SETUP =====================
@@ -52,7 +129,9 @@ void setup() {
   pinMode(AIN2, OUTPUT);
   pinMode(PWMA, OUTPUT);
   pinMode(ENCA, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(ENCA), encoderISR, RISING);
+  pinMode(ENCB, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(ENCA), encoderISR, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(ENCB), encoderISR, CHANGE);
 
   if (initServo() != ERROR_SUCCESS) {
     // Could enter error state or halt execution
@@ -61,6 +140,9 @@ void setup() {
   if (setServoAngle(90) != ERROR_SUCCESS) {
     // Handle servo error - possibly ignore or add specific handling
   }
+
+  // Initialize speed calculation variables
+  resetSpeedCalculation();
 
   state = INIT;
   // System initialized
@@ -79,6 +161,9 @@ void loop() {
     // For now, stay in current state to prevent erratic behavior
     return;
   }
+
+  // Calculate current speed based on encoder feedback
+  calculateSpeed();
 
   switch (state) {
 
@@ -115,7 +200,7 @@ void loop() {
           setMotor(PWM_NORMAL); // Fall back to normal speed if soft start fails
         }
       } else {
-        setMotor(PWM_NORMAL); // Set motor to normal speed
+        setMotor(PWM_NORMAL); // Set motor to normal speed (1 m/s)
       }
 
       if (detectLostLine()) {
@@ -167,7 +252,8 @@ void loop() {
       if (millis() - turn_left_prepare_start >= 800) {
         turn_left_prepare_start = 0; // reset timer
         afterJunction = true;
-        encoderCount = 0;
+        resetEncoder();          // Reset encoder counter
+        resetSpeedCalculation(); // Reset speed calculation
         setServoAngle(90); // Center servo after turn
         state = LINE_FOLLOW;
         first_run_after_init = false;  // Don't use soft start when resuming from turn

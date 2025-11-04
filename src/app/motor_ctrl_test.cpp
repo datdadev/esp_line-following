@@ -21,23 +21,31 @@ volatile bool flag_sample = false;
 volatile long encoderCount = 0;
 volatile unsigned long sampleCount = 0;
 
-// ====================== INTERRUPTS ======================
-void IRAM_ATTR onEncoderA() {
-  int A = digitalRead(ENCA);
-  int B = digitalRead(ENCB);
-  if (A == B)
-    encoderCount--;
-  else
-    encoderCount++;
-}
+// Quadrature encoder state variables
+volatile int8_t lastEncoded = 0;
 
-void IRAM_ATTR onEncoderB() {
-  int A = digitalRead(ENCA);
-  int B = digitalRead(ENCB);
-  if (A != B)
-    encoderCount--;
-  else
-    encoderCount++;
+// ====================== INTERRUPTS ======================
+void IRAM_ATTR onEncoder() {
+  // Read both encoder pins
+  int16_t MSB = digitalRead(ENCA);  // Most significant bit
+  int16_t LSB = digitalRead(ENCB);  // Least significant bit
+  
+  // Combine the two pin states into a single value
+  int8_t encoded = (MSB << 1) | LSB;
+  int8_t sum = (lastEncoded << 2) | encoded;
+  
+  // Increment or decrement based on the transition pattern
+  // Clockwise/Forward: 00->01->11->10->00 (0->1->3->2->0)
+  if (sum == 0b0001 || sum == 0b0111 || sum == 0b1110 || sum == 0b1000) {
+    encoderCount++;  // Forward direction
+  }
+  // Counter-clockwise/Reverse: 00->10->11->01->00 (0->2->3->1->0)
+  else if (sum == 0b0010 || sum == 0b1011 || sum == 0b1101 || sum == 0b0100) {
+    encoderCount--;  // Reverse direction
+  }
+  
+  // Store the current state for next interrupt
+  lastEncoded = encoded;
 }
 
 void IRAM_ATTR onTimer() {
@@ -59,8 +67,11 @@ void setup() {
   pinMode(ENCA, INPUT_PULLUP);
   pinMode(ENCB, INPUT_PULLUP);
 
-  attachInterrupt(digitalPinToInterrupt(ENCA), onEncoderA, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(ENCB), onEncoderB, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(ENCA), onEncoder, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(ENCB), onEncoder, CHANGE);
+
+  // Initialize the lastEncoded value with current state
+  lastEncoded = (digitalRead(ENCA) << 1) | digitalRead(ENCB);
 
   // Timer setup → 100 Hz (10 ms)
   timer = timerBegin(0, 80, true);            // 80 MHz / 80 = 1 MHz → 1 µs/tick

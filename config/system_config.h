@@ -11,8 +11,22 @@ constexpr float Kd = 0.1;
 constexpr uint8_t SONAR_TH_OBS = 45;   // cm
 constexpr uint8_t JUNCTION_COUNT = 5;
 constexpr float DIST_NEAR_GOAL = 35.0; // cm after junction
-constexpr int16_t PWM_NORMAL = 200;
-constexpr int16_t PWM_SLOW = 120;
+
+// Motor and Drive Configuration
+constexpr float GEAR_RATIO = 10.0;     // Gear reduction ratio (motor:wheel)
+constexpr float WHEEL_DIAMETER = 0.066; // Wheel diameter in meters (66mm)
+constexpr int PULSES_PER_REV = 11;     // Encoder pulses per motor revolution (PPR)
+constexpr float QUAD_FACTOR = 4.0;     // Quadrature decoding factor (4x)
+constexpr float COUNTS_PER_REV = PULSES_PER_REV * GEAR_RATIO * QUAD_FACTOR; // 440 counts/rev
+
+// Speed Configuration (1 m/s corresponds to 255 PWM)
+constexpr float MAX_SPEED = 1.0;       // Maximum speed in m/s
+constexpr int16_t MAX_PWM = 255;       // Maximum PWM value for 1m/s
+constexpr float SPEED_PER_PWM = MAX_SPEED / MAX_PWM;  // Speed per PWM unit (0.00392 m/s per PWM)
+
+// Default PWM values (converted from speeds)
+constexpr int16_t PWM_NORMAL = static_cast<int16_t>(1.0 / SPEED_PER_PWM); // ~255 for 1m/s
+constexpr int16_t PWM_SLOW = static_cast<int16_t>(0.6 / SPEED_PER_PWM);   // ~153 for 0.6m/s
 
 // Soft-start configuration
 constexpr uint32_t SOFT_START_DURATION = 1000;  // 1 second for soft start

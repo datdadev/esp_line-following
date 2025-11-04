@@ -15,12 +15,12 @@ A sophisticated line-following robot project built for ESP32 with advanced featu
 
 The project follows a structured organization:
 
-- `Inc/` - Public header files
-- `Config/` - System configuration files (parameters, pin mappings)
-- `Docs/` - Documentation
-- `Src/App/` - Application layer source code
-- `Src/Driver/` - Hardware drivers
-- `Src/MiddleWare/` - Middleware components (PID controller, etc.)
+- `inc/` - Public header files
+- `config/` - System configuration files (parameters, pin mappings)
+- `docs/` - Documentation
+- `src/app/` - Application layer source code
+- `src/driver/` - Hardware drivers
+- `src/middleưare/` - Middleware components (PID controller, etc.)
 - `platformio.ini` - PlatformIO build configuration
 
 ## Hardware Components
@@ -39,16 +39,12 @@ Prerequisites:
 
 Build commands:
 ```bash
-# Build the main application
 pio run
-
-# Build the motor test
-pio run -e motor_test
 ```
 
 ## Documentation
 
-Additional documentation can be found in the `Docs/` directory:
+Additional documentation can be found in the `docs/` directory:
 - [include_readme.md](docs/include_readme.md) - Information about header files
 - [lib_readme.md](docs/lib_readme.md) - Information about project libraries
 - [test_readme.md](docs/test_readme.md) - Information about testing
@@ -56,5 +52,5 @@ Additional documentation can be found in the `Docs/` directory:
 
 ## Configuration
 
-System parameters can be adjusted in `Config/system_config.h`
-Pin definitions are in `Inc/pins.h`
+System parameters can be adjusted in `config/system_config.h`
+Pin definitions are in `inc/pins.h`
