@@ -6,17 +6,13 @@
 #include "motor_driver.h"
 #include "sensor_driver.h"
 #include "servo_driver.h"
-#include "pid_controller.h"
+#include "lyapunov_controller.h"  // Lyapunov-based line following controller
 #include "soft_start.h"
+#include "network_handler.h"
 #include "error_codes.h"
+#include "robot_state.h"
 
 // ===================== GLOBAL VARIABLES =====================
-enum State {
-  INIT, IDLE, LINE_FOLLOW,
-  AVOID_PREPARE, AVOID_PATH, MERGE_SEARCH,
-  TURN_LEFT_PREPARE, SLOW_DOWN, STOP,
-  LOST_LINE
-};
 State state = INIT;
 
 bool afterJunction = false;
@@ -29,6 +25,9 @@ uint32_t turn_left_prepare_start = 0;
 
 // Soft-start variables
 bool first_run_after_init = true;  // To only apply soft-start on first run
+
+// Lyapunov controller debugging variables
+float lyapunov_last_error = 0.0;
 
 // ===================== QUADRATURE ENCODER VARIABLES =====================
 volatile int8_t lastEncoded = 0;
@@ -121,8 +120,12 @@ void IRAM_ATTR encoderISR() {
 // ===================== SETUP =====================
 void setup() {
   Serial.begin(115200);
+  delay(500);
+  Serial.println();
+  Serial.println("===== ESP32 Robot Booting =====");
 
   // Setup pins
+  Serial.println("[1/6] Configuring pins...");
   const uint8_t muxPins[3] = {MUX_S0, MUX_S1, MUX_S2};
   for (uint8_t i = 0; i < 3; i++) pinMode(muxPins[i], OUTPUT);
   pinMode(AIN1, OUTPUT);
@@ -132,20 +135,49 @@ void setup() {
   pinMode(ENCB, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(ENCA), encoderISR, CHANGE);
   attachInterrupt(digitalPinToInterrupt(ENCB), encoderISR, CHANGE);
+  Serial.println("  -> Pin configuration OK");
 
-  if (initServo() != ERROR_SUCCESS) {
-    // Could enter error state or halt execution
-    while(1); // Halt execution if critical component fails
-  }
-  if (setServoAngle(90) != ERROR_SUCCESS) {
-    // Handle servo error - possibly ignore or add specific handling
+  // Servo
+  Serial.println("[2/6] Initializing servo...");
+  int err = initServo();
+  if (err != ERROR_SUCCESS) {
+    Serial.printf("  [ERR] Servo init failed! Code: %d\n", err);
+    while (1);
+  } else {
+    Serial.println("  -> Servo init success");
   }
 
-  // Initialize speed calculation variables
+  err = setServoAngle(90);
+  if (err != ERROR_SUCCESS) {
+    Serial.printf("  [WARN] Servo angle set failed! Code: %d\n", err);
+  } else {
+    Serial.println("  -> Servo centered at 90°");
+  }
+
+  // Speed calculation
+  Serial.println("[3/6] Resetting speed calculation...");
   resetSpeedCalculation();
+  Serial.println("  -> Speed calculation ready");
 
+  // Network setup
+  Serial.println("[4/6] Initializing network...");
+  err = initNetwork();
+  if (err == ERROR_SUCCESS) {
+    setupWebSocket();
+    server.begin();
+    Serial.println("  -> Network initialized successfully");
+  } else {
+    Serial.printf("  [ERR] Network init failed! Code: %d\n", err);
+  }
+
+  // State init
+  Serial.println("[5/6] Setting initial state...");
   state = INIT;
-  // System initialized
+  Serial.println("  -> State set to INIT");
+
+  // Final message
+  Serial.println("[6/6] System initialized successfully!");
+  Serial.println("===================================");
 }
 
 // ===================== MAIN LOOP =====================
@@ -178,13 +210,19 @@ void loop() {
       break;
 
     case LINE_FOLLOW: {
+      // Lyapunov Controller Execution:
+      // 1. Compute error from line position (negative = left of center, positive = right of center)
       float e = computeError();
+      
+      // 2. Apply Lyapunov control law: u = K1*atan(e) + K2*e + K3*de/dt
       float u = 0.0;
-      if (PID(e, &u) != ERROR_SUCCESS) {
-        // Handle PID error - perhaps use a default action
+      if (LyapunovController(e, &u) != ERROR_SUCCESS) {
+        // Handle Lyapunov controller error - perhaps use a default action
         u = 0.0;  // Default to no correction
       }
-      setServoAngle(90 + (int8_t)u); // Attempt to set servo angle
+      
+      // 3. Apply steering correction: 90° is center position, u is the offset from Lyapunov algorithm
+      setServoAngle(90 + (int8_t)u); // Set servo angle based on Lyapunov output
       
       // Use soft start when first entering LINE_FOLLOW state
       if (first_run_after_init) {
@@ -280,5 +318,12 @@ void loop() {
       // Optionally, you can add a small forward movement or steering to try to find the line
       // For now, we'll just stop and wait for manual intervention
       break;
+  }
+  
+  // Send telemetry periodically (every 100ms)
+  static uint32_t lastTelemetry = 0;
+  if (millis() - lastTelemetry > 100) {
+    sendTelemetry();
+    lastTelemetry = millis();
   }
 }

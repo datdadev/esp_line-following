@@ -4,9 +4,17 @@
 // ===================== SYSTEM CONSTANTS =====================
 constexpr float Ts = 0.01;             // Sampling time (10 ms)
 constexpr uint8_t NUM_IR = 7;          // 7 TCRT5000 sensors
+
+// PID Controller Parameters (for backward compatibility)
 constexpr float Kp = 0.5;
 constexpr float Ki = 0.0;
 constexpr float Kd = 0.1;
+
+// Lyapunov Controller Parameters
+constexpr double LYP_K1 = 1.5;         // Proportional gain for arctan(e) - helps with stability
+constexpr double LYP_K2 = 0.8;         // Proportional gain for e - main steering response
+constexpr double LYP_K3 = 0.15;        // Derivative gain for de/dt - reduces oscillation
+constexpr double LYP_STEERING_LIMIT = 40.0;  // Maximum steering angle offset (degrees)
 
 constexpr uint8_t SONAR_TH_OBS = 45;   // cm
 constexpr uint8_t JUNCTION_COUNT = 5;

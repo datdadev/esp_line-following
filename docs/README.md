@@ -28,8 +28,8 @@ Src/
 │       └── motor_driver.cpp
 │
 └── MiddleWare/          # Middleware layer – RTOS, protocols, and libraries
-    ├── pid_controller.h
-    └── pid_controller.cpp
+    ├── lyapunov_controller.h
+    └── lyapunov_controller.cpp
 ```
 
 ## Logic and State Machines
