@@ -4,6 +4,24 @@
 #include "pins.h"
 #include "error_codes.h"
 
+// ===================== LINEAR REGRESSION CALIBRATION COEFFICIENTS =====================
+// Base values for calibration - separate for line and mid sensors
+const float LINE_CALIBRATION_BASE = 123.4285f;
+const float MID_CALIBRATION_BASE = 123.4285f;  // Same initial value, can be adjusted separately
+
+// Calibration coefficients for each sensor (sensor 0-6 correspond to sensors 1-7 in ref)
+const float LINE_CALIBRATION_COEFFS[7] = {1.1743f, 1.4031f, 0.9846f, 1.2453f, 1.0685f, 0.9738f, 0.9743f};
+const float MID_CALIBRATION_COEFFS[7] = {1.1743f, 1.4031f, 0.9846f, 1.2453f, 1.0685f, 0.9738f, 0.9743f};  // Same initial values, can be adjusted separately
+
+// Calibration offset values for each sensor (sensor 0-6 correspond to sensors 1-7 in ref)
+const int16_t LINE_CALIBRATION_OFFSETS[7] = {36, 32, 33, 30, 41, 13, 15};
+const int16_t MID_CALIBRATION_OFFSETS[7] = {36, 32, 33, 30, 41, 13, 15};  // Same initial values, can be adjusted separately
+
+// ===================== ERROR TRANSFORMATION COEFFICIENTS =====================
+// Final transformation coefficients for error calculation
+const float ERROR_SCALE_FACTOR = 0.9822f;
+const float ERROR_OFFSET = -1.6627f;
+
 // ===================== GLOBAL VARIABLES =====================
 int16_t lineSensor[7];  // Front array sensors
 int16_t midSensor[7];   // Middle array sensors
@@ -31,19 +49,29 @@ int8_t readLineSensors() {
   // 2 sets of 7 sensors connected via 2 multiplexers with shared select lines
   const uint8_t NUM_IR = 7;  // 7 TCRT5000 sensors per array
   
+  // Read raw sensor values
+  int16_t rawLineSensor[7];
+  int16_t rawMidSensor[7];
+  
   for (uint8_t i = 0; i < NUM_IR; i++) {
     // Both muxes get the same selection signals, but we read from different output pins
     int16_t lineValue = readMux(i, 0);  // Read from front array (first mux output)
     if (lineValue < 0) {  // Check for error code returned by readMux
       return ERROR_SENSOR_READ_FAILED;
     }
-    lineSensor[i] = lineValue;
+    rawLineSensor[i] = lineValue;
     
     int16_t midValue = readMux(i, 1);   // Read from middle array (second mux output)
     if (midValue < 0) {  // Check for error code returned by readMux
       return ERROR_SENSOR_READ_FAILED;
     }
-    midSensor[i] = midValue;
+    rawMidSensor[i] = midValue;
+  }
+  
+  // Apply linear regression calibration to front sensors using line constants
+  for (uint8_t i = 0; i < 7; i++) {
+    lineSensor[i] = (int16_t)(LINE_CALIBRATION_BASE + LINE_CALIBRATION_COEFFS[i] * (rawLineSensor[i] - LINE_CALIBRATION_OFFSETS[i]));
+    midSensor[i] = (int16_t)(MID_CALIBRATION_BASE + MID_CALIBRATION_COEFFS[i] * (rawMidSensor[i] - MID_CALIBRATION_OFFSETS[i]));
   }
   
   return ERROR_SUCCESS;
@@ -107,7 +135,7 @@ bool detectJunction() {
   uint8_t count = 0;
   bool sensorStates[NUM_IR];
   for (uint8_t i = 0; i < NUM_IR; i++) {
-    sensorStates[i] = (lineSensor[i] < 500); // black threshold
+    sensorStates[i] = (lineSensor[i] < 200); // black threshold - adjusted for calibrated values
     if (sensorStates[i]) count++;
   }
   
@@ -126,7 +154,7 @@ bool detectFinishLine() {
   const uint8_t NUM_IR = 7;
   uint8_t count = 0;
   for (uint8_t i = 0; i < NUM_IR; i++)
-    if (lineSensor[i] < 500) count++;
+    if (lineSensor[i] < 200) count++; // threshold adjusted for calibrated values
   return (count >= 6);
 }
 
@@ -135,24 +163,33 @@ bool detectLostLine() {
   // If no sensors detect the line (all sensors see white/reflective surface)
   uint8_t count = 0;
   for (uint8_t i = 0; i < NUM_IR; i++)
-    if (lineSensor[i] < 500) count++; // black threshold
+    if (lineSensor[i] < 200) count++; // black threshold - adjusted for calibrated values
   return (count == 0);
 }
 
 // ===================== ERROR COMPUTATION =====================
 float computeError() {
-  int8_t weights[7] = {-3, -2, -1, 0, 1, 2, 3};
-  const uint8_t NUM_IR = 7;
-  uint8_t blackCount = 0;
-  int8_t sumW = 0;
+  // Use the already calibrated lineSensor values for error computation
+  // Calculate the weighted sum for error computation using calibrated values
+  float num = 3 * (lineSensor[0] - lineSensor[6]) +  // sensorValue1 - sensorValue7
+              2 * (lineSensor[1] - lineSensor[5]) +  // sensorValue2 - sensorValue6
+                  (lineSensor[2] - lineSensor[4]);   // sensorValue3 - sensorValue5
 
-  for (uint8_t i = 0; i < NUM_IR; i++) {
-    if (lineSensor[i] < 500) { // black
-      sumW += weights[i];
-      blackCount++;
-    }
+  float den = lineSensor[0] + lineSensor[1] + lineSensor[2] + 
+              lineSensor[3] + lineSensor[4] + lineSensor[5] + lineSensor[6];
+
+  // Calculate the base error value using the calibrated formula
+  float TB = (den != 0.0f) ? (num * 13.0f / den) : 0.0f;
+
+  // Count how many sensors detect the line (threshold is around 200 for calibrated values)
+  uint8_t D = 0;
+  for (uint8_t i = 0; i < 7; i++) {
+    if (lineSensor[i] < 200) D++;  // calibrated threshold for "black" detection
   }
 
-  if (blackCount == 0) return 0;
-  return (float)sumW / blackCount;
+  if (D == 0) return 999;    // lost line
+  else if (D >= 5) return 1000; // intersection (5 or more sensors detecting line)
+  
+  // Apply final transformation to get error value using constants
+  return TB * ERROR_SCALE_FACTOR + ERROR_OFFSET;
 }
