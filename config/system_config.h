@@ -16,7 +16,7 @@ constexpr double LYP_K2 = 0.8;         // Proportional gain for e - main steerin
 constexpr double LYP_K3 = 0.15;        // Derivative gain for de/dt - reduces oscillation
 constexpr double LYP_STEERING_LIMIT = 40.0;  // Maximum steering angle offset (degrees)
 
-constexpr uint8_t SONAR_TH_OBS = 45;   // cm
+constexpr uint16_t SONAR_TH_OBS = 450;   // mm
 constexpr uint8_t JUNCTION_COUNT = 5;
 constexpr float DIST_NEAR_GOAL = 35.0; // cm after junction
 

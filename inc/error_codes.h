@@ -3,7 +3,7 @@
 
 // ===================== DEBUG FLAG =====================
 // Uncomment the line below to enable debug output
-// #define DEBUG_ENABLED
+#define DEBUG_ENABLED
 
 // ===================== ERROR CODES =====================
 // Success codes (non-negative values)

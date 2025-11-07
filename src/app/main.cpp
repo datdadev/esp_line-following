@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <ESP32Servo.h>
 #include <stdint.h>
+#include <math.h>
 #include "system_config.h"
 #include "pins.h"
 #include "motor_driver.h"
@@ -11,6 +12,12 @@
 #include "network_handler.h"
 #include "error_codes.h"
 #include "robot_state.h"
+#include "background_tasks.h"
+#include "avoid_path.h"
+
+// ===================== EXTERNAL VARIABLES =====================
+extern int16_t lineSensor[7];  // Front array sensors (from sensor_driver.cpp)
+extern float sonarDistance;    // Ultrasonic distance (from sensor_driver.cpp)
 
 // ===================== GLOBAL VARIABLES =====================
 State state = INIT;
@@ -22,6 +29,7 @@ uint32_t lastSample = 0;
 // Timestamps for non-blocking delays
 uint32_t avoid_prepare_start = 0;
 uint32_t turn_left_prepare_start = 0;
+uint32_t servo_settle_start = 0;
 
 // Soft-start variables
 bool first_run_after_init = true;  // To only apply soft-start on first run
@@ -175,8 +183,14 @@ void setup() {
   state = INIT;
   Serial.println("  -> State set to INIT");
 
+  // Background tasks
+  Serial.println("[6/6] Initializing background tasks...");
+  initBackgroundTasks();
+  startLedBlinkTask(1); // Run LED blinking task on core 1
+  Serial.println("  -> Background tasks initialized");
+
   // Final message
-  Serial.println("[6/6] System initialized successfully!");
+  Serial.println("[7/7] System initialized successfully!");
   Serial.println("===================================");
 }
 
@@ -194,8 +208,32 @@ void loop() {
     return;
   }
 
+  // Update sonar distance for continuous monitoring
+  updateSonarDistance();
+
   // Calculate current speed based on encoder feedback
   calculateSpeed();
+
+  #ifdef DEBUG_ENABLED
+  // Debug print: time, state, [IR0, IR1, IR2, IR3, IR4, IR5, IR6], ultrasonic, servo, dc pwm
+  int8_t servoAngle;
+  int16_t motorPWM;
+  getCurrentServoAngle(&servoAngle);
+  getMotor(&motorPWM);
+  Serial.printf(
+    "%6lu  %2d  "
+    "[%4d, %4d, %4d, %4d, %4d, %4d, %4d]  "
+    "[%4d, %4d, %4d, %4d, %4d, %4d, %4d]  "
+    "%7.2f  %4d  %4d  %7.2f\n",
+    millis(), state,
+    lineSensor[0], lineSensor[1], lineSensor[2], lineSensor[3],
+    lineSensor[4], lineSensor[5], lineSensor[6],
+    midSensor[0], midSensor[1], midSensor[2], midSensor[3],
+    midSensor[4], midSensor[5], midSensor[6],
+    sonarDistance, servoAngle, motorPWM, currentSpeed
+  );
+
+  #endif
 
   switch (state) {
 
@@ -203,7 +241,7 @@ void loop() {
       setMotor(0);  // Stop the motor (error checking not required for normal operation)
       setServoAngle(90);  // Center the servo (error checking not required for normal operation)
       if (digitalRead(BTN_BOOT) == LOW) {
-        state = LINE_FOLLOW;
+        state = AVOID_PREPARE; // FIX ME: LINE_FOLLOW;
         first_run_after_init = true;  // Enable soft start for the first run
         // Start line following
       }
@@ -256,28 +294,68 @@ void loop() {
     case AVOID_PREPARE:
       if (avoid_prepare_start == 0) {
         setMotor(PWM_SLOW); // Attempt to set motor speed
-        setServoAngle(130); // steer right
-        avoid_prepare_start = millis();
+        setServoAngle(120); // steer right
+        servo_settle_start = millis(); // Record when servo command was sent
+        avoid_prepare_start = millis(); // Record start of avoidance maneuver
       }
-      if (millis() - avoid_prepare_start >= 500) {
+      // Allow a small time for servo to settle (non-blocking)
+      else if (millis() - servo_settle_start < 10) { // 10ms for servo to reach position
+        // Just wait for servo to settle, but don't block the sampling time
+        // The main loop will continue to execute other tasks during this time
+      }
+      if (millis() - avoid_prepare_start >= 3000) {
         avoid_prepare_start = 0; // reset timer
+        servo_settle_start = 0;  // reset servo settle timer
         state = AVOID_PATH;
       }
       break;
 
     case AVOID_PATH:
-      setMotor(PWM_NORMAL); // Set motor to normal speed
-      setServoAngle(130); // Steer right
-      if (!detectObstacle()) {
-        state = MERGE_SEARCH;
+      {
+        setMotor(PWM_NORMAL); // Set motor to normal speed
+        
+        // Initialize path on first entry to this state
+        if (avoid_path_start_time == 0) {
+          avoid_path_start_time = millis();
+          sine_wave_phase = 0.0;
+        }
+        
+        // Calculate path angle based on time elapsed and desired path function
+        // You can change the PathFunctionType to any of: SINE_WAVE, TRIANGLE_WAVE, 
+        // SQUARE_WAVE, SAWTOOTH_WAVE, or COMBINED_WAVES
+        float timeElapsed = (millis() - avoid_path_start_time) / 1000.0;  // Convert to seconds
+        
+        // Path selection - change this to switch between different path functions:
+        // SINE_WAVE: smooth sine wave oscillation
+        // TRIANGLE_WAVE: linear triangular oscillation  
+        // SQUARE_WAVE: sharp transitions between extremes
+        // SAWTOOTH_WAVE: ramp up then drop
+        // COMBINED_WAVES: combination of multiple functions for complex path
+        PathFunctionType selectedPath = SEQUENTIAL_WAVES;
+        
+        float pathAngle = calculatePathAngle(timeElapsed, selectedPath);
+        
+        setServoAngle((int8_t)pathAngle);
+        
+        if (!detectObstacle()) {
+          // Reset the timer when transitioning to merge search
+          avoid_path_start_time = 0;
+          state = MERGE_SEARCH;
+        }
       }
       break;
 
     case MERGE_SEARCH:
-      setServoAngle(70); // steer back left to find line
-      if (detectJunction() || computeError() != 0) {
-        state = LINE_FOLLOW;
-        first_run_after_init = false;  // Don't use soft start when resuming from merge
+      {
+        setServoAngle(70); // steer back left to find line
+        if (detectJunction() || computeError() != 0) {
+          state = LINE_FOLLOW;
+          first_run_after_init = false;  // Don't use soft start when resuming from merge
+          
+          // Reset sine wave variables when returning to line follow
+          avoid_path_start_time = 0;
+          sine_wave_phase = 0.0;
+        }
       }
       break;
 

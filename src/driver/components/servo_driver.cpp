@@ -6,30 +6,25 @@
 
 // ===================== SERVO CONTROL =====================
 Servo steering;
+static int8_t currentServoAngle = 90;  // Track current servo angle, default to center
 
 int8_t initServo() {
   if (steering.attached()) {
-    #ifdef DEBUG_ENABLED
-    Serial.println("Servo: Already initialized");
-    #endif
+  
     return ERROR_ALREADY_INITIALIZED;  // Servo already initialized
   }
   
-  if (!steering.attach(SERVO_PIN)) {
-    #ifdef DEBUG_ENABLED
-    Serial.println("Servo: Failed to attach to pin");
-    #endif
+  // Attach servo with min and max pulse widths for wide range servo (500-2400µs)
+  // This allows for extended 0-180 degree range
+  if (steering.attach(SERVO_PIN, 500, 2400) < 0) {
+  
     return ERROR_SERVO_INIT_FAILED;  // Failed to attach servo
   }
   
   steering.write(90);  // Set initial position to center (90 degrees)
-  #ifdef DEBUG_ENABLED
-  Serial.println("Servo: Initial position set to center");
-  #endif
+
   
-  #ifdef DEBUG_ENABLED
-  Serial.println("Servo: Initialization successful");
-  #endif
+
   return ERROR_SUCCESS;
 }
 
@@ -43,18 +38,22 @@ int8_t setServoAngle(int8_t angle) {
   
   // Validate angle range (typically servos work between 0-180 degrees)
   if (angle < 0 || angle > 180) {
-    #ifdef DEBUG_ENABLED
-    Serial.print("Servo: Angle out of range: ");
-    Serial.println(angle);
-    #endif
+  
     return ERROR_SERVO_OUT_OF_RANGE;  // Angle out of acceptable range
   }
   
+  currentServoAngle = angle;
   steering.write(angle);  // Set servo to requested angle
-  #ifdef DEBUG_ENABLED
-  Serial.print("Servo: Set angle to: ");
-  Serial.println(angle);
-  #endif
+
   
+  return ERROR_SUCCESS;
+}
+
+int8_t getCurrentServoAngle(int8_t* angle) {
+  if (angle == nullptr) {
+    return ERROR_INVALID_PARAMETER;
+  }
+  
+  *angle = currentServoAngle;
   return ERROR_SUCCESS;
 }

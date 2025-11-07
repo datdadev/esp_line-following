@@ -63,7 +63,8 @@ int8_t getSonarDistance(float* distance) {
   digitalWrite(ULTRASONIC_PIN, LOW);
 
   pinMode(ULTRASONIC_PIN, INPUT);
-  uint32_t duration = pulseIn(ULTRASONIC_PIN, HIGH, 30000);
+  // Increase timeout to 60000 microseconds (about 10 meters max range)
+  uint32_t duration = pulseIn(ULTRASONIC_PIN, HIGH, 60000);
   
   if (duration == 0) {
     // Timeout occurred
@@ -71,26 +72,30 @@ int8_t getSonarDistance(float* distance) {
     return ERROR_ULTRASONIC_TIMEOUT;
   }
   
-  *distance = duration * 0.034 / 2.0;
+  *distance = (float)duration * 0.17; // 0.034 / 2.0; // Calculate distance in cm
   return ERROR_SUCCESS;
+}
+
+// ===================== SONAR UPDATE FUNCTION =====================
+void updateSonarDistance() {
+  float distance = 0.0;
+  int8_t result = getSonarDistance(&distance);
+  if (result == ERROR_SUCCESS) {
+    sonarDistance = distance;
+  }
+  // Even if there's an error, we still update the global variable with the measured value
+  // (which will be 0.0 in case of timeout), so the value is always current
+  else {
+    sonarDistance = distance;
+  }
 }
 
 // ===================== DETECTION FUNCTIONS =====================
 bool detectObstacle() {
-  float distance = 0.0;
-  int8_t result = getSonarDistance(&distance);
-  if (result != ERROR_SUCCESS) {
-    #ifdef DEBUG_ENABLED
-    Serial.print("Sensor: getSonarDistance failed with error code: ");
-    Serial.println(result);
-    #endif
-    
-    // If there's an error getting distance, we assume no obstacle for safety
-    return false;
-  }
+  // Update global sonarDistance variable with current reading
+  updateSonarDistance();
   
-  sonarDistance = distance;
-  const uint8_t SONAR_TH_OBS = 45;   // cm
+  const uint16_t SONAR_TH_OBS = 450;   // mm
   return (sonarDistance > 0 && sonarDistance < SONAR_TH_OBS);
 }
 

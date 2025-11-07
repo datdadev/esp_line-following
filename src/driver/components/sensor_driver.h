@@ -10,6 +10,7 @@
 int16_t readMux(uint8_t channel, uint8_t arrayIdx);
 int8_t readLineSensors();  // Returns error code
 int8_t getSonarDistance(float* distance);  // Returns error code, distance via pointer
+void updateSonarDistance(); // Updates the global sonarDistance variable with current reading
 
 // ===================== LINE SENSORS =====================
 extern int16_t lineSensor[7];  // Front array sensors
