@@ -15,6 +15,9 @@ extern const char* password;
 extern AsyncWebServer server;
 extern AsyncWebSocket ws;
 
+// ===================== EXTERNAL VARIABLES =====================
+extern float lineFollowError;  // Error value from line following (e2)
+
 // ===================== FUNCTION DECLARATIONS =====================
 int8_t initNetwork();  // Returns error code
 void sendTelemetry();

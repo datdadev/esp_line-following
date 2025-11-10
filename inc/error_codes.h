@@ -30,6 +30,7 @@
 #define ERROR_SENSOR_NOT_CONNECTED     -101  // Sensor not properly connected
 #define ERROR_SENSOR_CALIBRATION       -102  // Sensor calibration failed
 #define ERROR_ULTRASONIC_TIMEOUT       -103  // Ultrasonic sensor reading timeout
+#define ERROR_ULTRASONIC_BUSY          -104  // Ultrasonic measurement in progress (non-blocking)
 
 // Motor-specific error codes
 #define ERROR_MOTOR_INIT_FAILED        -200  // Motor initialization failed
