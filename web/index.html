@@ -290,7 +290,7 @@
                                 <span class="text-[10px] font-mono text-slate-500 uppercase">Steer</span>
                                 <span id="val-servo" class="text-sm font-bold text-orange-500 font-mono mb-2">90°</span>
                                 <div class="vertical-slider-container bg-slate-100 dark:bg-slate-900/50 rounded-full border border-slate-200 dark:border-slate-700 py-2">
-                                    <input id="slider-servo" type="range" min="0" max="180" value="90" class="vertical-slider accent-orange-500">
+                                    <input id="slider-servo" type="range" min="45" max="135" value="90" class="vertical-slider accent-orange-500">
                                 </div>
                              </div>
 
@@ -577,10 +577,10 @@
                      const forward = data.vector.y;
                      let pwm = Math.floor(Math.max(0, forward) * 255);
                     
-                     // Map X (Left/Right) to Servo (0-180)
+                     // Map X (Left/Right) to Servo (45-135)
                      const turn = data.vector.x;
-                     let servo = Math.floor(90 + (turn * 90));
-                     servo = Math.max(0, Math.min(180, servo)); // Clamp
+                     let servo = Math.floor(90 + (turn * 45)); // Max 45 degrees from center (90-45=45, 90+45=135)
+                     servo = Math.max(45, Math.min(135, servo)); // Clamp to safe range
                     
                      // Update Controls UI
                      document.getElementById('slider-pwm').value = pwm;
@@ -807,9 +807,11 @@
                     document.getElementById('mode-status-text').textContent = newMode + " MODE";
                     // Lock/Unlock Manual Controls based on mode
                     this.setManualControls(newMode === 'MANUAL');
-                    if (this.isSimulation && newMode === 'MANUAL') this.simState.state = 'IDLE';
                     this.sendCommand('SET_MODE', { mode: newMode });
-                    if (this.isSimulation && newMode === 'AUTO') this.simState.state = 'LINE_FOLLOW';
+                    if (this.isSimulation) {
+                        if (newMode === 'MANUAL') this.simState.state = 'MANUAL';
+                        else if (newMode === 'AUTO') this.simState.state = 'LINE_FOLLOW';
+                    }
                 });
 
                 // Initialize mode display on page load based on default checkbox state
@@ -817,7 +819,10 @@
                 const initialMode = initialChecked ? 'AUTO' : 'MANUAL';
                 document.getElementById('mode-status-text').textContent = initialMode + " MODE";
                 this.setManualControls(initialMode === 'MANUAL');
-                if (this.isSimulation && initialMode === 'AUTO') this.simState.state = 'LINE_FOLLOW';
+                if (this.isSimulation) {
+                    if (initialMode === 'MANUAL') this.simState.state = 'MANUAL';
+                    else if (initialMode === 'AUTO') this.simState.state = 'LINE_FOLLOW';
+                }
 
                 // Error view toggle
                 document.getElementById('btn-error-toggle').addEventListener('click', () => {
@@ -864,17 +869,51 @@
                      this.log(`[CMD] Sending: ${cmd.toUpperCase()} ${JSON.stringify(params)}`);
                 }
 
+                // Constrain servo values to safe range (45-135 degrees)
+                if (cmd === 'SET_SERVO' && params.value !== undefined) {
+                    params.value = Math.max(45, Math.min(135, params.value));
+                }
+
+                // Immediately update UI state for SET_MODE commands to provide responsive feedback
+                if (cmd === 'SET_MODE') {
+                    let displayState = '';
+                    if (params.mode === 'AUTO') {
+                        displayState = 'INIT'; // ESP32 sets state to INIT when AUTO mode is selected
+                    } else if (params.mode === 'MANUAL') {
+                        displayState = 'MANUAL';
+                    }
+                    
+                    // Update the state display immediately
+                    if (displayState) {
+                        const el = document.getElementById('telemetry-state-pill');
+                        if (el) {
+                            el.textContent = displayState.replace('_', ' ');
+                            // Reset classes then add specific ones
+                            el.className = 'text-xs font-black';
+                            switch(displayState) {
+                                case 'IDLE': el.classList.add('text-blue-500'); break;
+                                case 'LINE_FOLLOW': el.classList.add('text-emerald-500'); break;
+                                case 'OBSTACLE_AVOID': el.classList.add('text-yellow-500'); break;
+                                case 'EMERGENCY': el.classList.add('text-red-500', 'animate-pulse'); break;
+                                case 'MANUAL': el.classList.add('text-purple-500'); break;
+                                case 'INIT': el.classList.add('text-slate-500'); break; // Default color for INIT
+                                default: el.classList.add('text-slate-500');
+                            }
+                        }
+                    }
+                }
+
                 if (this.isConnected && this.ws) {
                     this.ws.send(JSON.stringify({ command: cmd, ...params }));
                 } else if (this.isSimulation) {
                     if(cmd === 'SET_MODE') {
                          if(params.mode === 'AUTO') this.simState.state = 'LINE_FOLLOW';
-                         else if(params.mode === 'MANUAL') this.simState.state = 'IDLE';
+                         else if(params.mode === 'MANUAL') this.simState.state = 'MANUAL';
                     }
                     if(cmd === 'SET_PWM') {
                         this.simState.targetSpeed = params.value / 255; 
                     }
-                    if(cmd === 'SET_SERVO') this.simState.servoPos = params.value;
+                    if(cmd === 'SET_SERVO') this.simState.servoPos = Math.max(45, Math.min(135, params.value));
                 }
             }
             
