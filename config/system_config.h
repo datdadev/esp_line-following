@@ -33,8 +33,8 @@ constexpr int16_t MAX_PWM = 255;       // Maximum PWM value for 1m/s
 constexpr float SPEED_PER_PWM = MAX_SPEED / MAX_PWM;  // Speed per PWM unit (0.00392 m/s per PWM)
 
 // Default PWM values (converted from speeds)
-constexpr int16_t PWM_NORMAL = static_cast<int16_t>(1.0 / SPEED_PER_PWM); // ~255 for 1m/s
-constexpr int16_t PWM_SLOW = static_cast<int16_t>(0.6 / SPEED_PER_PWM);   // ~153 for 0.6m/s
+constexpr int16_t PWM_NORMAL = static_cast<int16_t>(0.6 / SPEED_PER_PWM); // ~255 for 1m/s
+constexpr int16_t PWM_SLOW = static_cast<int16_t>(0.3 / SPEED_PER_PWM);   // ~153 for 0.6m/s
 
 // Soft-start configuration
 constexpr uint32_t SOFT_START_DURATION = 1000;  // 1 second for soft start

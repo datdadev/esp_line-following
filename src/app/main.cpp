@@ -147,6 +147,7 @@ void setup() {
   pinMode(PWMA, OUTPUT);
   pinMode(ENCA, INPUT_PULLUP);
   pinMode(ENCB, INPUT_PULLUP);
+  pinMode(LED_RED, OUTPUT);
   attachInterrupt(digitalPinToInterrupt(ENCA), encoderISR, CHANGE);
   attachInterrupt(digitalPinToInterrupt(ENCB), encoderISR, CHANGE);
   Serial.println("  -> Pin configuration OK");
@@ -193,6 +194,7 @@ void setup() {
   Serial.println("[6/6] Initializing background tasks...");
   initBackgroundTasks();
   startLedBlinkTask(1); // Run LED blinking task on core 1
+  startSonarTask(0);    // Run sonar reading task on core 0 (the other core)
   Serial.println("  -> Background tasks initialized");
 
   // Final message
@@ -213,9 +215,6 @@ void loop() {
     // For now, stay in current state to prevent erratic behavior
     return;
   }
-
-  // Update sonar distance for continuous monitoring
-  updateSonarDistance();
 
   // Calculate current speed based on encoder feedback
   calculateSpeed();
@@ -246,6 +245,8 @@ void loop() {
     case INIT:
       setMotor(0);  // Stop the motor (error checking not required for normal operation)
       setServoAngle(90);  // Center the servo (error checking not required for normal operation)
+      digitalWrite(LED_RED, LOW);
+
       if (digitalRead(BTN_BOOT) == LOW) {
         state = LINE_FOLLOW; // FIX ME: LINE_FOLLOW;
         first_run_after_init = true;  // Enable soft start for the first run
@@ -389,14 +390,19 @@ void loop() {
     case STOP:
       setMotor(0); // Stop the motor
       setServoAngle(90); // Center the servo
-      while (1);
+      
+      if (digitalRead(BTN_BOOT) == LOW)
+        state = INIT;
       break;
 
     case LOST_LINE:
-      setMotor(0); // Stop the motor
-      setServoAngle(90); // Center the steering
-      // Optionally, you can add a small forward movement or steering to try to find the line
-      // For now, we'll just stop and wait for manual intervention
+      state = STOP; // Reset to INIT state to wait for restart
+      break;
+      
+    case MANUAL:
+      // In manual mode, motor and servo are controlled directly via web commands
+      // The robot remains in MANUAL mode until changed externally via web command
+      // We still read sensors and provide telemetry, but don't make autonomous decisions
       break;
   }
   

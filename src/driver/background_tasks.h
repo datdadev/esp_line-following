@@ -16,6 +16,12 @@ void initBackgroundTasks();
 void startLedBlinkTask(uint8_t core_id);
 
 /**
+ * @brief Start the sonar reading task on a separate core
+ * @param core_id The core ID to run the task on (0 or 1)
+ */
+void startSonarTask(uint8_t core_id);
+
+/**
  * @brief Stop the LED blinking task
  */
 void stopLedBlinkTask();

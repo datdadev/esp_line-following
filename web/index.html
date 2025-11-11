@@ -145,8 +145,8 @@
             <div class="flex items-center space-x-4">
                 <button id="btn-sim-toggle" class="px-3 py-1 bg-yellow-500/10 text-yellow-600 dark:text-yellow-500 text-xs font-medium rounded-full border border-yellow-500/20 flex items-center hover:bg-yellow-500/20 transition-all" title="Toggle Simulation Mode">
                     <span class="relative flex h-2 w-2 mr-2">
-                      <span id="sim-ping" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
-                      <span class="relative inline-flex rounded-full h-2 w-2 bg-yellow-500"></span>
+                        <span id="sim-ping" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
+                        <span class="relative inline-flex rounded-full h-2 w-2 bg-yellow-500"></span>
                     </span>
                     SIMULATION
                 </button>
@@ -203,23 +203,23 @@
                             <div class="grid grid-cols-4 gap-2">
                                  <!-- Speed -->
                                 <div class="bg-white/50 dark:bg-slate-900/50 px-2 py-2 rounded-lg border border-slate-200/50 dark:border-slate-800/50 text-center">
-                                     <span class="text-[9px] text-slate-400 uppercase block mb-1">Speed</span>
-                                     <span id="telemetry-speed" class="font-mono font-bold text-sm block">0.00</span>
+                                    <span class="text-[9px] text-slate-400 uppercase block mb-1">Speed</span>
+                                    <span id="telemetry-speed" class="font-mono font-bold text-sm block">0.00</span>
                                 </div>
                                  <!-- PWM -->
                                 <div class="bg-white/50 dark:bg-slate-900/50 px-2 py-2 rounded-lg border border-slate-200/50 dark:border-slate-800/50 text-center">
-                                     <span class="text-[9px] text-slate-400 uppercase block mb-1">PWM</span>
-                                     <span id="telemetry-pwm" class="font-mono font-bold text-sm block">0</span>
+                                    <span class="text-[9px] text-slate-400 uppercase block mb-1">PWM</span>
+                                    <span id="telemetry-pwm" class="font-mono font-bold text-sm block">0</span>
                                 </div>
                                  <!-- Sonar -->
                                 <div class="bg-white/50 dark:bg-slate-900/50 px-2 py-2 rounded-lg border border-slate-200/50 dark:border-slate-800/50 text-center">
-                                     <span class="text-[9px] text-slate-400 uppercase block mb-1">Sonar</span>
-                                     <span id="telemetry-sonar" class="font-mono font-bold text-sm block">0</span>
+                                    <span class="text-[9px] text-slate-400 uppercase block mb-1">Sonar</span>
+                                    <span id="telemetry-sonar" class="font-mono font-bold text-sm block">0</span>
                                 </div>
                                  <!-- Servo -->
                                 <div class="bg-white/50 dark:bg-slate-900/50 px-2 py-2 rounded-lg border border-slate-200/50 dark:border-slate-800/50 text-center">
-                                     <span class="text-[9px] text-slate-400 uppercase block mb-1">Servo</span>
-                                     <span id="telemetry-servo" class="font-mono font-bold text-sm block">90</span>
+                                    <span class="text-[9px] text-slate-400 uppercase block mb-1">Servo</span>
+                                    <span id="telemetry-servo" class="font-mono font-bold text-sm block">90</span>
                                 </div>
                             </div>
                             
@@ -270,47 +270,47 @@
                             </button>
                             <!-- Mode Toggle -->
                             <div class="flex flex-col justify-center items-center bg-slate-100 dark:bg-slate-900/50 p-3 px-5 rounded-xl border border-slate-200 dark:border-slate-800">
-                                 <div class="flex items-center space-x-2 mb-1">
-                                     <span class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">Manual</span>
-                                     <label for="mode-toggle" class="relative flex items-center cursor-pointer">
-                                         <input type="checkbox" id="mode-toggle" class="sr-only peer">
-                                         <div class="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-emerald-500"></div>
-                                     </label>
-                                     <span class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">Auto</span>
-                                 </div>
-                                 <span id="mode-status-text" class="text-xs font-black text-slate-700 dark:text-slate-300">MANUAL MODE</span>
+                                <div class="flex items-center space-x-2 mb-1">
+                                    <span class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">Manual</span>
+                                    <label for="mode-toggle" class="relative flex items-center cursor-pointer">
+                                        <input type="checkbox" id="mode-toggle" class="sr-only peer" checked>
+                                        <div class="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-emerald-500"></div>
+                                    </label>
+                                    <span class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">Auto</span>
+                                </div>
+                                <span id="mode-status-text" class="text-xs font-black text-slate-700 dark:text-slate-300">AUTO MODE</span>
                              </div>
                         </div>
 
                          <!-- 3 Column Control Layout (Swapped Sliders + Joystick) -->
                          <div class="flex justify-between items-center px-1 h-[220px]">
-                             
+                            
                             <!-- LEFT: Servo Vertical Slider (previously right) -->
                              <div class="flex flex-col items-center space-y-2 z-10">
-                                 <span class="text-[10px] font-mono text-slate-500 uppercase">Steer</span>
-                                 <span id="val-servo" class="text-sm font-bold text-orange-500 font-mono mb-2">90°</span>
-                                 <div class="vertical-slider-container bg-slate-100 dark:bg-slate-900/50 rounded-full border border-slate-200 dark:border-slate-700 py-2">
-                                     <input id="slider-servo" type="range" min="0" max="180" value="90" class="vertical-slider accent-orange-500">
-                                 </div>
+                                <span class="text-[10px] font-mono text-slate-500 uppercase">Steer</span>
+                                <span id="val-servo" class="text-sm font-bold text-orange-500 font-mono mb-2">90°</span>
+                                <div class="vertical-slider-container bg-slate-100 dark:bg-slate-900/50 rounded-full border border-slate-200 dark:border-slate-700 py-2">
+                                    <input id="slider-servo" type="range" min="0" max="180" value="90" class="vertical-slider accent-orange-500">
+                                </div>
                              </div>
 
                              <!-- CENTER: Joystick Zone -->
                              <div class="flex-1 h-full flex items-center justify-center relative mx-4">
-                                 <div id="joystick-zone" class="w-full h-full max-w-[200px] max-h-[200px] relative rounded-full bg-slate-100/50 dark:bg-slate-900/30 border-2 border-dashed border-slate-300 dark:border-slate-700">
-                                     <!-- NippleJS will inject here -->
-                                     <div class="absolute inset-0 flex items-center justify-center pointer-events-none text-slate-300 dark:text-slate-700 opacity-50">
-                                         <i data-lucide="move" class="w-12 h-12"></i>
-                                     </div>
-                                 </div>
+                                <div id="joystick-zone" class="w-full h-full max-w-[200px] max-h-[200px] relative rounded-full bg-slate-100/50 dark:bg-slate-900/30 border-2 border-dashed border-slate-300 dark:border-slate-700">
+                                    <!-- NippleJS will inject here -->
+                                    <div class="absolute inset-0 flex items-center justify-center pointer-events-none text-slate-300 dark:text-slate-700 opacity-50">
+                                        <i data-lucide="move" class="w-12 h-12"></i>
+                                    </div>
+                                </div>
                              </div>
 
                             <!-- RIGHT: PWM Vertical Slider (previously left) -->
                              <div class="flex flex-col items-center space-y-2 z-10">
-                                 <span class="text-[10px] font-mono text-slate-500 uppercase">Speed</span>
-                                 <span id="val-pwm" class="text-sm font-bold text-blue-500 font-mono mb-2">0</span>
-                                 <div class="vertical-slider-container bg-slate-100 dark:bg-slate-900/50 rounded-full border border-slate-200 dark:border-slate-700 py-2">
-                                     <input id="slider-pwm" type="range" min="0" max="255" value="0" class="vertical-slider accent-blue-500">
-                                 </div>
+                                <span class="text-[10px] font-mono text-slate-500 uppercase">Speed</span>
+                                <span id="val-pwm" class="text-sm font-bold text-blue-500 font-mono mb-2">0</span>
+                                <div class="vertical-slider-container bg-slate-100 dark:bg-slate-900/50 rounded-full border border-slate-200 dark:border-slate-700 py-2">
+                                    <input id="slider-pwm" type="range" min="0" max="255" value="0" class="vertical-slider accent-blue-500">
+                                </div>
                              </div>
                          </div>
 
@@ -327,7 +327,7 @@
                     <div class="widget-header flex flex-col sm:flex-row justify-between items-center mb-4 border-b border-slate-200/50 dark:border-slate-800/50 pb-4 p-2 -m-2 rounded-t-xl transition-colors hover:bg-slate-200/50 dark:hover:bg-slate-800/50">
                         <div class="flex items-center mb-2 sm:mb-0 mr-auto space-x-4">
                              <h2 class="text-lg font-semibold flex items-center text-slate-900 dark:text-white">
-                                <i data-lucide="activity" class="w-5 h-5 mr-2 text-blue-500 dark:text-blue-400"></i> Telemetry
+                                 <i data-lucide="activity" class="w-5 h-5 mr-2 text-blue-500 dark:text-blue-400"></i> Telemetry
                             </h2>
                             <!-- Chart Controls -->
                             <div class="flex items-center space-x-1">
@@ -362,7 +362,7 @@
                              <div id="ultrasonic-container" class="plot-container absolute inset-0 transition-opacity duration-300">
                                 <canvas id="ultrasonic-plot"></canvas>
                                 <div class="absolute top-2 right-2 font-mono text-3xl font-bold text-blue-500/80 dark:text-blue-500/80 pointer-events-none"><span id="ultrasonic-live-val">0</span><span class="text-sm ml-1">mm</span></div>
-                            </div>
+                             </div>
                             <div id="servo-container" class="plot-container absolute inset-0 transition-opacity duration-300 opacity-0 pointer-events-none">
                                 <canvas id="servo-plot"></canvas>
                                 <div class="absolute top-2 right-2 font-mono text-3xl font-bold text-orange-500/80 pointer-events-none"><span id="servo-live-val">90</span><span class="text-sm ml-1">deg</span></div>
@@ -382,15 +382,9 @@
                         
                         <!-- Log Export Controls -->
                         <div class="flex items-center space-x-2 ml-auto mr-4">
-                            <select id="log-duration" class="text-xs px-2 py-1 rounded-md bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                                <option value="1">Last 1 min</option>
-                                <option value="2">Last 2 mins</option>
-                                <option value="3">Last 3 mins</option>
-                                <option value="4">Last 4 mins</option>
-                                <option value="5">Last 5 mins</option>
-                            </select>
-                            <button id="btn-download-logs" class="flex items-center px-2 py-1 bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs font-medium rounded-md border border-blue-500/20 hover:bg-blue-500/20 transition-colors" title="Download Logs">
-                                <i data-lucide="download" class="w-3 h-3 mr-1"></i> Export
+                            <!-- MODIFIED: Removed the select dropdown -->
+                            <button id="btn-download-logs" class="flex items-center px-2 py-1 bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs font-medium rounded-md border border-blue-500/20 hover:bg-blue-500/20 transition-colors" title="Download Last 1 Min of Logs">
+                                <i data-lucide="download" class="w-3 h-3 mr-1"></i> Export (1 min)
                             </button>
                         </div>
 
@@ -441,7 +435,7 @@
                              <i data-lucide="trending-up" class="w-4 h-4 mr-2"></i> Error Monitor
                         </h2>
                           <div class="flex items-center">
-                             <!-- Chart Controls -->
+                               <!-- Chart Controls -->
                             <div class="flex items-center space-x-1 mr-2">
                                 <button id="btn-error-refresh" class="p-1.5 rounded-md text-slate-500 hover:text-blue-500 hover:bg-blue-500/10 transition-colors" title="Clear Data"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
                                 <button id="btn-error-reset" class="p-1.5 rounded-md text-slate-500 hover:text-blue-500 hover:bg-blue-500/10 transition-colors" title="Reset Zoom"><i data-lucide="zoom-out" class="w-4 h-4"></i></button>
@@ -454,29 +448,29 @@
                                 </button>
                                 <button class="collapse-trigger hover:text-slate-700 dark:hover:text-slate-300 transition-colors"><i data-lucide="chevron-down" class="w-5 h-5 collapse-icon transition-transform"></i></button>
                                 <i data-lucide="grip-vertical" class="w-5 h-5 opacity-50"></i>
-                            </div>
-                        </div>
+                             </div>
+                          </div>
                     </div>
                     <div class="widget-content" style="min-height: 300px;">
-                         <!-- Error Live Values -->
-                         <div class="flex justify-center space-x-8 mb-2 text-sm font-mono">
-                             <div class="flex items-center"><span class="w-2 h-2 rounded-full bg-red-500 mr-2"></span>E2: <span id="val-e2" class="font-bold ml-1 text-slate-700 dark:text-slate-300">0.00</span></div>
-                             <div class="flex items-center"><span class="w-2 h-2 rounded-full bg-blue-500 mr-2"></span>E3: <span id="val-e3" class="font-bold ml-1 text-slate-700 dark:text-slate-300">0.00</span></div>
-                         </div>
+                           <!-- Error Live Values -->
+                           <div class="flex justify-center space-x-8 mb-2 text-sm font-mono">
+                               <div class="flex items-center"><span class="w-2 h-2 rounded-full bg-red-500 mr-2"></span>E2: <span id="val-e2" class="font-bold ml-1 text-slate-700 dark:text-slate-300">0.00</span></div>
+                               <div class="flex items-center"><span class="w-2 h-2 rounded-full bg-blue-500 mr-2"></span>E3: <span id="val-e3" class="font-bold ml-1 text-slate-700 dark:text-slate-300">0.00</span></div>
+                           </div>
 
-                         <!-- Container for Merged View (Default) -->
-                         <div id="error-mode-merged" class="h-[300px] w-full relative transition-all duration-300">
-                             <canvas id="error-merged-plot"></canvas>
-                         </div>
-                         <!-- Container for Split View (Hidden initially) -->
-                         <div id="error-mode-split" class="h-[300px] w-full hidden flex-col space-y-2 transition-all duration-300">
-                             <div class="flex-1 relative min-h-0">
-                                 <canvas id="error-e2-plot"></canvas>
-                             </div>
-                             <div class="flex-1 relative min-h-0">
-                                 <canvas id="error-e3-plot"></canvas>
-                             </div>
-                         </div>
+                          <!-- Container for Merged View (Default) -->
+                          <div id="error-mode-merged" class="h-[300px] w-full relative transition-all duration-300">
+                               <canvas id="error-merged-plot"></canvas>
+                          </div>
+                          <!-- Container for Split View (Hidden initially) -->
+                          <div id="error-mode-split" class="h-[300px] w-full hidden flex-col space-y-2 transition-all duration-300">
+                               <div class="flex-1 relative min-h-0">
+                                   <canvas id="error-e2-plot"></canvas>
+                               </div>
+                               <div class="flex-1 relative min-h-0">
+                                   <canvas id="error-e3-plot"></canvas>
+                               </div>
+                          </div>
                     </div>
                 </div>
             </div>
@@ -534,7 +528,8 @@
                 this.ws = null; this.isConnected = false; this.isSimulation = false; 
                 this.simInterval = null; this.maxDataPoints = 100; this.updateInterval = 50; 
                 this.telemetryHistory = [];
-                this.maxHistoryRetention = 10 * 60 * 1000; // Keep last 10 mins in memory just in case
+                // MODIFIED: Keep only 1 minute of logs in memory to reduce lag.
+                this.maxHistoryRetention = 1 * 60 * 1000; 
                 this.errorViewMerged = true; // Track state of error chart view
                 this.isTelemetryPaused = false;
                 this.joystick = null;
@@ -581,12 +576,12 @@
                      // Map Y (Forward/Back) to PWM (0-255)
                      const forward = data.vector.y;
                      let pwm = Math.floor(Math.max(0, forward) * 255);
-                     
+                    
                      // Map X (Left/Right) to Servo (0-180)
                      const turn = data.vector.x;
                      let servo = Math.floor(90 + (turn * 90));
                      servo = Math.max(0, Math.min(180, servo)); // Clamp
-                
+                    
                      // Update Controls UI
                      document.getElementById('slider-pwm').value = pwm;
                      document.getElementById('val-pwm').textContent = pwm;
@@ -596,7 +591,7 @@
                      // Optimistic Update Status UI (Synchronize Telemetry)
                      document.getElementById('telemetry-pwm').textContent = pwm;
                      document.getElementById('telemetry-servo').textContent = servo;
-                
+                    
                      // Send Commands
                      this.sendCommand('SET_PWM', { value: pwm });
                      this.sendCommand('SET_SERVO', { value: servo });
@@ -611,7 +606,7 @@
                     // Reset Status UI to neutral
                     document.getElementById('telemetry-pwm').textContent = '0';
                     document.getElementById('telemetry-servo').textContent = '90';
-                
+                    
                     this.sendCommand('SET_PWM', { value: 0 });
                     this.sendCommand('SET_SERVO', { value: 90 });
                 });
@@ -620,12 +615,14 @@
             processIncomingData(data) {
                 data.timestamp = Date.now();
                 this.telemetryHistory.push(data);
+                
+                // Prune history array
                 const cutoff = Date.now() - this.maxHistoryRetention;
                 if (this.telemetryHistory.length > 0 && this.telemetryHistory[0].timestamp < cutoff) {
-                     const cutoffIndex = this.telemetryHistory.findIndex(d => d.timestamp >= cutoff);
-                     if (cutoffIndex > 0) {
-                         this.telemetryHistory = this.telemetryHistory.slice(cutoffIndex);
-                     }
+                    const cutoffIndex = this.telemetryHistory.findIndex(d => d.timestamp >= cutoff);
+                    if (cutoffIndex > 0) {
+                        this.telemetryHistory = this.telemetryHistory.slice(cutoffIndex);
+                    }
                 }
                 // Only update UI if not paused
                 if (!this.isTelemetryPaused) {
@@ -725,15 +722,15 @@
             enableDragging() {
                 const setupLockedDrag = (items, handleSelector) => {
                      items.forEach(el => {
-                        const handle = el.querySelector(handleSelector);
-                        if(!handle) return;
-                        handle.addEventListener('mouseenter', () => el.setAttribute('draggable', 'true'));
-                        handle.addEventListener('mouseleave', () => el.setAttribute('draggable', 'false'));
-                        el.addEventListener('dragstart', (e) => { 
-                            if(el.getAttribute('draggable') === 'true') { el.classList.add('dragging'); e.stopPropagation(); } else { e.preventDefault(); }
-                        });
-                        el.addEventListener('dragend', () => { el.classList.remove('dragging'); this.resizeCharts(); });
-                    });
+                         const handle = el.querySelector(handleSelector);
+                         if(!handle) return;
+                         handle.addEventListener('mouseenter', () => el.setAttribute('draggable', 'true'));
+                         handle.addEventListener('mouseleave', () => el.setAttribute('draggable', 'false'));
+                         el.addEventListener('dragstart', (e) => { 
+                             if(el.getAttribute('draggable') === 'true') { el.classList.add('dragging'); e.stopPropagation(); } else { e.preventDefault(); }
+                         });
+                         el.addEventListener('dragend', () => { el.classList.remove('dragging'); this.resizeCharts(); });
+                     });
                 }
                 setupLockedDrag(document.querySelectorAll('.draggable'), '.widget-header');
                 setupLockedDrag(document.querySelectorAll('.tab-btn'), '.tab-drag-handle');
@@ -764,21 +761,23 @@
                 document.getElementById('btn-connect-toggle').addEventListener('click', () => this.isConnected ? this.disconnect() : this.connect());
                 document.getElementById('btn-chart-refresh').addEventListener('click', () => this.refreshCharts());
                 document.getElementById('btn-chart-reset').addEventListener('click', () => this.resetChartZoom());
-                document.getElementById('btn-download-logs').addEventListener('click', () => { const minutes = parseInt(document.getElementById('log-duration').value); this.downloadLogs(minutes); });
+                
+                // MODIFIED: Hardcoded to 1 minute, removed select box dependency.
+                document.getElementById('btn-download-logs').addEventListener('click', () => { const minutes = 1; this.downloadLogs(minutes); });
 
                 // Chart hold/pause
                 document.getElementById('btn-chart-hold').addEventListener('click', (e) => {
                     this.isTelemetryPaused = !this.isTelemetryPaused;
                     const btn = e.currentTarget;
                      if (this.isTelemetryPaused) {
-                        btn.classList.add('text-amber-500', 'bg-amber-500/10');
-                        btn.querySelector('i').setAttribute('data-lucide', 'play');
-                        this.log("[UI] Telemetry PAUSED", 'warning');
-                    } else {
-                        btn.classList.remove('text-amber-500', 'bg-amber-500/10');
-                        btn.querySelector('i').setAttribute('data-lucide', 'pause');
-                         this.log("[UI] Telemetry RESUMED", 'info');
-                    }
+                         btn.classList.add('text-amber-500', 'bg-amber-500/10');
+                         btn.querySelector('i').setAttribute('data-lucide', 'play');
+                         this.log("[UI] Telemetry PAUSED", 'warning');
+                     } else {
+                         btn.classList.remove('text-amber-500', 'bg-amber-500/10');
+                         btn.querySelector('i').setAttribute('data-lucide', 'pause');
+                          this.log("[UI] Telemetry RESUMED", 'info');
+                     }
                     lucide.createIcons();
                 });
 
@@ -812,6 +811,13 @@
                     this.sendCommand('SET_MODE', { mode: newMode });
                     if (this.isSimulation && newMode === 'AUTO') this.simState.state = 'LINE_FOLLOW';
                 });
+
+                // Initialize mode display on page load based on default checkbox state
+                const initialChecked = document.getElementById('mode-toggle').checked;
+                const initialMode = initialChecked ? 'AUTO' : 'MANUAL';
+                document.getElementById('mode-status-text').textContent = initialMode + " MODE";
+                this.setManualControls(initialMode === 'MANUAL');
+                if (this.isSimulation && initialMode === 'AUTO') this.simState.state = 'LINE_FOLLOW';
 
                 // Error view toggle
                 document.getElementById('btn-error-toggle').addEventListener('click', () => {
@@ -1031,9 +1037,9 @@
 
              updateTelemetry(data) {
                 if (data.timestamp) {
-                     const date = new Date(data.timestamp);
-                     const timeStr = date.toLocaleTimeString('en-GB', { hour12: false }) + '.' + String(date.getMilliseconds()).padStart(3, '0');
-                     document.getElementById('telemetry-timestamp').textContent = timeStr;
+                    const date = new Date(data.timestamp);
+                    const timeStr = date.toLocaleTimeString('en-GB', { hour12: false }) + '.' + String(date.getMilliseconds()).padStart(3, '0');
+                    document.getElementById('telemetry-timestamp').textContent = timeStr;
                 }
                 if (data.state) {
                     const el = document.getElementById('telemetry-state-pill');
@@ -1065,15 +1071,15 @@
                 }
 
                 if (data.obstacle !== undefined) {
-                      const obEl = document.getElementById('obstacle-pill');
-                      if(data.obstacle) { 
-                          obEl.innerHTML = '<i data-lucide="shield-alert" class="w-4 h-4 mr-2"></i> DETECTED'; 
-                          obEl.className = "flex-1 bg-red-500/10 text-red-600 dark:text-red-400 rounded-xl px-3 py-2 text-xs font-bold flex items-center justify-center transition-colors animate-pulse"; 
-                      } else { 
-                          obEl.innerHTML = '<i data-lucide="shield-check" class="w-4 h-4 mr-2"></i> CLEAR';
-                          obEl.className = "flex-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-xl px-3 py-2 text-xs font-bold flex items-center justify-center transition-colors"; 
-                      }
-                      lucide.createIcons(); // Refresh icons in pill
+                     const obEl = document.getElementById('obstacle-pill');
+                     if(data.obstacle) { 
+                         obEl.innerHTML = '<i data-lucide="shield-alert" class="w-4 h-4 mr-2"></i> DETECTED'; 
+                         obEl.className = "flex-1 bg-red-500/10 text-red-600 dark:text-red-400 rounded-xl px-3 py-2 text-xs font-bold flex items-center justify-center transition-colors animate-pulse"; 
+                     } else { 
+                         obEl.innerHTML = '<i data-lucide="shield-check" class="w-4 h-4 mr-2"></i> CLEAR';
+                         obEl.className = "flex-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-xl px-3 py-2 text-xs font-bold flex items-center justify-center transition-colors"; 
+                     }
+                     lucide.createIcons(); // Refresh icons in pill
                 }
             }
         }

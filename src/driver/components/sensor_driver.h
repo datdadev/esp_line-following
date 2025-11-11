@@ -38,6 +38,7 @@ int16_t readMux(uint8_t channel, uint8_t arrayIdx);
 int8_t readLineSensors();  // Returns error code
 int8_t getSonarDistance(float* distance);  // Returns error code, distance via pointer
 void updateSonarDistance(); // Updates the global sonarDistance variable with current reading
+float getSonarDistanceReading(); // Gets the current sonar distance reading safely
 
 // ===================== OBSTACLE DETECTION FUNCTIONS =====================
 bool detectObstacle();

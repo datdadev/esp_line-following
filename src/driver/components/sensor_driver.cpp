@@ -3,6 +3,8 @@
 #include <stdint.h>
 #include "pins.h"
 #include "error_codes.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 // ===================== PIN DEFINITIONS =====================
 // MUX select pins
@@ -84,9 +86,10 @@ int8_t readLineSensors() {
 
 // ===================== SONAR FUNCTIONS =====================
 int8_t getSonarDistance(float* distance) {
-    static float lastDistance = 0.0f; // For simple low-pass filter
-    const float alpha = 0.5f;         // Filter coefficient (0 < alpha <= 1)
-    const float maxDistance = 3500.0f; // Max distance in mm
+    static float lastDistance = 800.0f; // For simple low-pass filter - reasonable initial distance
+    static bool firstReading = true;    // Flag to handle first reading specially
+    const float alpha = 0.25f;          // Filter coefficient (0 < alpha <= 1), reduced for more smoothing against motor noise
+    const float maxDistance = 800.0f;  // Max distance in mm
 
     if (!distance) return ERROR_INVALID_PARAMETER;
 
@@ -99,30 +102,42 @@ int8_t getSonarDistance(float* distance) {
     digitalWrite(ULTRASONIC_PIN, LOW);
 
     pinMode(ULTRASONIC_PIN, INPUT);
-    uint32_t duration = pulseIn(ULTRASONIC_PIN, HIGH, 60000); // Timeout 60ms (~10 m)
+    uint32_t duration = pulseIn(ULTRASONIC_PIN, HIGH, 5000); // Timeout 60ms (~10 m)
 
     if (duration == 0) {
         // Timeout occurred
-        *distance = lastDistance; // Keep last valid reading
+        *distance = maxDistance; // Keep last valid reading instead of hardcoded value
         return ERROR_ULTRASONIC_TIMEOUT;
     }
 
-    // Convert to cm
+    // Convert to cm (this gives cm, multiply by 10 to get mm for comparison)
     float newDistance = duration * 0.17f; // 0.034 / 2 in cm
 
     // Clamp maximum distance
     if (newDistance > maxDistance) newDistance = maxDistance;
 
-    // Simple low-pass filter
-    lastDistance = alpha * newDistance + (1 - alpha) * lastDistance;
+    // Simple low-pass filter with more aggressive smoothing to reduce motor noise
+    // For the first reading, use the raw value instead of filtered to avoid starting at 0
+    if (firstReading) {
+        lastDistance = newDistance;
+        firstReading = false;
+    } else {
+        lastDistance = alpha * newDistance + (1 - alpha) * lastDistance;
+    }
     *distance = lastDistance;
 
     return ERROR_SUCCESS;
 }
 
+// Static mutex for protecting access to sonarDistance
+static portMUX_TYPE sonarMux = portMUX_INITIALIZER_UNLOCKED;
+
 void updateSonarDistance() {
   float distance = 0.0;
   int8_t result = getSonarDistance(&distance);
+  
+  // Use critical section to safely update the global sonarDistance
+  portENTER_CRITICAL(&sonarMux);
   if (result == ERROR_SUCCESS) {
     sonarDistance = distance;
   }
@@ -131,6 +146,17 @@ void updateSonarDistance() {
   else {
     sonarDistance = distance;
   }
+  portEXIT_CRITICAL(&sonarMux);
+}
+
+// Function to safely read the sonar distance from main thread
+float getSonarDistanceReading() {
+  float currentDistance;
+  // Use critical section to safely read the global sonarDistance
+  portENTER_CRITICAL(&sonarMux);
+  currentDistance = sonarDistance;
+  portEXIT_CRITICAL(&sonarMux);
+  return currentDistance;
 }
 
 // ===================== LINE DETECTION FUNCTIONS =====================
@@ -176,35 +202,39 @@ bool detectLostLine() {
 
 // ===================== OBSTACLE DETECTION FUNCTIONS =====================
 bool detectObstacle() {
-  // Update global sonarDistance variable with current reading
-  updateSonarDistance();
+  // Get the current sonar distance reading from the background task
+  float currentDistance = getSonarDistanceReading();
 
-  return (sonarDistance > 0 && sonarDistance < SONAR_THRESHOLD_OBSTACLE);
+  bool obstacleDetected = (currentDistance > 0 && currentDistance < SONAR_THRESHOLD_OBSTACLE);
+  obstacleDetected ? digitalWrite(LED_RED, LOW) : digitalWrite(LED_RED, HIGH); // Turn on LED if obstacle detected (reversed)
+
+  // Serial.println("Sonar Distance: " + String(currentDistance) + " mm, Obstacle: " + String(obstacleDetected));
+  return obstacleDetected;
 }
 
 // ===================== ERROR COMPUTATION =====================
+// Pre-computed coefficients for error calculation
+const float ERROR_COEFFS[7] = {3.0f, 2.0f, 1.0f, 0.0f, -1.0f, -2.0f, -3.0f};
+const float SCALING_FACTOR = 13.0f * ERROR_SCALE_FACTOR;
+
 float computeError() {
-  // Use the already calibrated lineSensor values for error computation
-  // Calculate the weighted sum for error computation using calibrated values
-  float num = 3 * (lineSensor[0] - lineSensor[6]) +  // sensorValue1 - sensorValue7
-              2 * (lineSensor[1] - lineSensor[5]) +  // sensorValue2 - sensorValue6
-                  (lineSensor[2] - lineSensor[4]);   // sensorValue3 - sensorValue5
-
-  float den = lineSensor[0] + lineSensor[1] + lineSensor[2] +
-              lineSensor[3] + lineSensor[4] + lineSensor[5] + lineSensor[6];
-
-  // Calculate the base error value using the calibrated formula
-  float TB = (den != 0.0f) ? (num * 13.0f / den) : 0.0f;
-
-  // Count how many sensors detect the line (threshold is around 200 for calibrated values)
+  float num = 0.0f;
+  float den = 0.0f;
   uint8_t D = 0;
+  
+  // Single pass through all sensors
   for (uint8_t i = 0; i < 7; i++) {
-    if (lineSensor[i] >= 2048) D++;  // calibrated threshold for "black" detection
+    float sensorValue = (float)lineSensor[i];
+    num += ERROR_COEFFS[i] * sensorValue;
+    den += sensorValue;
+    
+    if (sensorValue >= 2048.0f) D++;
   }
-
-  if (D == 0) return 999;    // lost line
-  else if (D >= 5) return 1000; // intersection (5 or more sensors detecting line)
-
-  // Apply final transformation to get error value using constants
-  return TB * ERROR_SCALE_FACTOR + ERROR_OFFSET;
+  
+  // Handle special cases
+  if (D == 0) return 999.0f;
+  if (D >= 5) return 1000.0f;
+  
+  // Calculate final error
+  return (den != 0.0f) ? ((num * SCALING_FACTOR / den) + ERROR_OFFSET) : ERROR_OFFSET;
 }
