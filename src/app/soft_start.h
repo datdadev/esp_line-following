@@ -5,7 +5,7 @@
 #include "error_codes.h"
 
 // ===================== SOFT START =====================
-int8_t getSoftStartSpeed(int16_t targetSpeed, int16_t* result);  // Returns error code, result via pointer
+int8_t getSoftStartSpeed(float targetSpeed, float* result);  // Returns error code, result via pointer
 extern bool soft_start_active;
 extern uint32_t soft_start_start_time;
 

@@ -188,9 +188,9 @@ int8_t initNetwork() {
     return ERROR_GENERAL_FAILURE;
   }
 
-  // Serial.println();
-  // Serial.print("Connected to WiFi. IP address: ");
-  // Serial.println(WiFi.localIP());
+  Serial.println();
+  Serial.print("Connected to WiFi. IP address: ");
+  Serial.println(WiFi.localIP());
 
   return ERROR_SUCCESS;
 }

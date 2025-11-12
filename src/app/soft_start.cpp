@@ -6,7 +6,7 @@
 bool soft_start_active = false;
 uint32_t soft_start_start_time = 0;
 
-int8_t getSoftStartSpeed(int16_t targetSpeed, int16_t* result) {
+int8_t getSoftStartSpeed(float targetSpeed, float* result) {
   if (result == nullptr) {
     return ERROR_INVALID_PARAMETER;
   }
@@ -30,6 +30,6 @@ int8_t getSoftStartSpeed(int16_t targetSpeed, int16_t* result) {
     return ERROR_INVALID_PARAMETER;
   }
   
-  *result = (int16_t)(progress * targetSpeed);
+  *result = progress * targetSpeed;
   return ERROR_SUCCESS;
 }
