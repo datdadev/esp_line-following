@@ -16,11 +16,33 @@ constexpr float SPEED_PER_PWM = MAX_SPEED / MAX_PWM;
 constexpr int16_t PWM_NORMAL = static_cast<int16_t>(1.0 / SPEED_PER_PWM);
 constexpr int16_t PWM_SLOW   = static_cast<int16_t>(0.3 / SPEED_PER_PWM);
 
+// ================== Obstacle Avoidance Parameters ==================
+constexpr float OBSTACLE_AVOID_S1 = 264.28;  // mm
+constexpr float OBSTACLE_AVOID_S2 = OBSTACLE_AVOID_S1 + 528.56;  // mm  
+constexpr float OBSTACLE_AVOID_S3 = OBSTACLE_AVOID_S2 + 264.28;  // mm
+
+// Servo angles for obstacle avoidance
+constexpr int8_t SERVO_AVOID_LEFT = 113.336;
+constexpr int8_t SERVO_AVOID_RIGHT = 66.664;
+
+// ================== System States ==================
+enum SystemState {
+  IDLE,
+  AVOID_PATH,
+  COMPLETED
+};
+
+SystemState currentState = AVOID_PATH; // Start in AVOID_PATH state
+bool avoidPathActive = false;
+float totalDistanceTraveled = 0.0;
+float distanceTraveled = 0.0;
+int32_t initialEncoderCount = 0;
+
 // ================== PID Parameters ==================
 float TARGET_SPEED = 1.0;     // 1 m/s target
-float KP = 150.0;             // Proportional gain
-float KI = 1000.0;              // Integral gain  
-float KD = 5.0;               // Derivative gain
+float KP = 150.0;             // Proportional gain - FIXED
+float KI = 1000.0;             // Integral gain - FIXED  
+float KD = 5.0;               // Derivative gain - FIXED
 float INTEGRAL_LIMIT = 100.0; // Anti-windup limit
 
 // ================== pins.h ==================
@@ -31,6 +53,7 @@ float INTEGRAL_LIMIT = 100.0; // Anti-windup limit
 #define ENCB    34
 #define LED_RED 15
 #define BTN_BOOT 0
+#define SERVO_PIN 16  // Servo control pin
 
 volatile int32_t encoderCount = 0;
 volatile int8_t lastEncoded = 0;
@@ -40,7 +63,7 @@ float speed = 0.0;
 uint32_t lastSpeedCalcTime = 0;
 int32_t lastEncoderCount = 0;
 
-bool motorOn = false;
+bool motorOn = true; // Start with motor on
 bool lastButtonState = HIGH;
 
 float deltaWheelRev = 0.0;
@@ -87,6 +110,29 @@ float calculateSpeed() {
   lastSpeedCalcTime = currentTime;
 
   return speed;
+}
+
+// ================== Distance Calculation ==================
+float calculateDistanceTraveled() {
+  int32_t currentCount = encoderCount;
+  float wheelRev = (currentCount - initialEncoderCount) / COUNTS_PER_REV;
+  float distance = wheelRev * (WHEEL_DIAMETER * 3.14159265) * 1000; // Distance in mm
+  return distance;
+}
+
+// ================== Servo Control ==================
+void setServoAngle(uint8_t angle) {
+  // Simple PWM servo control - adjust pulse width for your servo
+  uint16_t pulseWidth = map(angle, 0, 180, 500, 2400);
+  digitalWrite(SERVO_PIN, HIGH);
+  delayMicroseconds(pulseWidth);
+  digitalWrite(SERVO_PIN, LOW);
+}
+
+// ================== Reset Encoder for Path ==================
+void resetPathEncoder() {
+  initialEncoderCount = encoderCount;
+  distanceTraveled = 0.0;
 }
 
 // ================== PID Controller ==================
@@ -136,86 +182,61 @@ void setMotor(int16_t pwm) {
   }
 }
 
+// ================== Obstacle Avoidance State Machine ==================
+void updateAvoidPathState() {
+  if (currentState != AVOID_PATH) return;
+  
+  distanceTraveled = calculateDistanceTraveled();
+  
+  // Initialize path on first entry
+  if (!avoidPathActive) {
+    setServoAngle(90);  // Steer max left 66.664 degrees
+    resetPathEncoder();               // Reset distance measurement
+    avoidPathActive = true;
+  }
+  
+  // State transitions based on distance
+  if (distanceTraveled < OBSTACLE_AVOID_S1) {
+    // Stage 1: Turn left
+    setServoAngle(SERVO_AVOID_LEFT);
+  } else if (distanceTraveled < OBSTACLE_AVOID_S2) {
+    // Stage 2: Turn right
+    setServoAngle(SERVO_AVOID_RIGHT);
+  } else if (distanceTraveled < OBSTACLE_AVOID_S3) {
+    // Stage 3: Turn left again
+    setServoAngle(SERVO_AVOID_LEFT);
+  } else {
+    // Path completed
+    currentState = COMPLETED;
+    avoidPathActive = false;
+    motorOn = false;
+    setMotor(0);
+  }
+}
+
 // ================== Serial Command Processing ==================
 void processSerialCommand() {
   if (stringComplete) {
     inputString.trim();
     
     if (inputString.length() > 0) {
-      // Parse command
-      if (inputString == "help") {
-        Serial.println("\n=== PID Tuning Commands ===");
-        Serial.println("start          - Start motor with PID");
-        Serial.println("stop           - Stop motor");
-        Serial.println("status         - Show current PID values and state");
-        Serial.println("kp [value]     - Set proportional gain");
-        Serial.println("ki [value]     - Set integral gain");
-        Serial.println("kd [value]     - Set derivative gain");
-        Serial.println("target [value] - Set target speed (m/s)");
-        Serial.println("reset          - Reset PID integral");
-        Serial.println("pwm [value]    - Set direct PWM (bypass PID)");
-        Serial.println("pid            - Switch back to PID control");
-        Serial.println("========================");
+      if (inputString == "stop") {
+        motorOn = false;
+        currentState = IDLE;
+        avoidPathActive = false;
+        digitalWrite(LED_RED, LOW);
+        setMotor(0);
       }
-      else if (inputString == "start") {
+      else if (inputString == "avoid") {
         motorOn = true;
+        currentState = AVOID_PATH;
+        avoidPathActive = false; // Will be activated in state machine
         digitalWrite(LED_RED, HIGH);
         integral = 0.0;
         lastError = 0.0;
-        Serial.println("Motor STARTED with PID control");
-      }
-      else if (inputString == "stop") {
-        motorOn = false;
-        digitalWrite(LED_RED, LOW);
-        setMotor(0);
-        Serial.println("Motor STOPPED");
-      }
-      else if (inputString == "status") {
-        Serial.println("\n=== Current Status ===");
-        Serial.printf("Motor: %s\n", motorOn ? "RUNNING" : "STOPPED");
-        Serial.printf("Target Speed: %.3f m/s\n", TARGET_SPEED);
-        Serial.printf("Current Speed: %.3f m/s\n", speed);
-        Serial.printf("KP: %.2f, KI: %.2f, KD: %.2f\n", KP, KI, KD);
-        Serial.printf("Error: %.3f, Integral: %.3f\n", error, integral);
-        Serial.printf("PWM Output: %d\n", motorPWM);
-        Serial.println("====================");
-      }
-      else if (inputString == "reset") {
-        integral = 0.0;
-        lastError = 0.0;
-        Serial.println("PID reset - integral cleared");
-      }
-      else if (inputString == "pid") {
-        motorOn = true;
-        Serial.println("Switched to PID control");
-      }
-      else if (inputString.startsWith("kp ")) {
-        KP = inputString.substring(3).toFloat();
-        Serial.printf("KP set to: %.2f\n", KP);
-      }
-      else if (inputString.startsWith("ki ")) {
-        KI = inputString.substring(3).toFloat();
-        Serial.printf("KI set to: %.2f\n", KI);
-      }
-      else if (inputString.startsWith("kd ")) {
-        KD = inputString.substring(3).toFloat();
-        Serial.printf("KD set to: %.2f\n", KD);
-      }
-      else if (inputString.startsWith("target ")) {
-        TARGET_SPEED = inputString.substring(7).toFloat();
-        Serial.printf("Target speed set to: %.3f m/s\n", TARGET_SPEED);
-      }
-      else if (inputString.startsWith("pwm ")) {
-        motorPWM = inputString.substring(4).toInt();
-        motorOn = true;
-        Serial.printf("Direct PWM set to: %d (PID disabled)\n", motorPWM);
-      }
-      else {
-        Serial.println("Unknown command. Type 'help' for available commands.");
       }
     }
     
-    // Clear the string
     inputString = "";
     stringComplete = false;
   }
@@ -237,40 +258,53 @@ void serialEvent() {
 void setup() {
   Serial.begin(115200);
   delay(500);
-  Serial.println("===== PID Speed Control with Serial Tuning =====");
-  Serial.println("Type 'help' for available commands");
 
+  // Motor control pins
   pinMode(AIN1, OUTPUT);
   pinMode(AIN2, OUTPUT);
   pinMode(PWMA, OUTPUT);
-  pinMode(ENCA, INPUT_PULLUP);
-  pinMode(ENCB, INPUT_PULLUP);
+  
+  // Encoder pins
+  pinMode(ENCA, INPUT);
+  pinMode(ENCB, INPUT);
+  
+  // LED and button
   pinMode(LED_RED, OUTPUT);
   pinMode(BTN_BOOT, INPUT_PULLUP);
+  
+  // Servo pin
+  pinMode(SERVO_PIN, OUTPUT);
 
+  // Use external pull-up resistors for encoder pins
   attachInterrupt(digitalPinToInterrupt(ENCA), encoderISR, CHANGE);
   attachInterrupt(digitalPinToInterrupt(ENCB), encoderISR, CHANGE);
 
   setMotor(0);
   lastSpeedCalcTime = millis();
   lastEncoderCount = encoderCount;
+  initialEncoderCount = encoderCount;
   
   // Initialize PID variables
   error = 0.0;
   lastError = 0.0;
   integral = 0.0;
   derivative = 0.0;
+  
+  // Start obstacle avoidance immediately
+  digitalWrite(LED_RED, HIGH);
+  resetPathEncoder();
+
+  setServoAngle(90);
+  delay(1000);
 }
 
 // ================== Loop ==================
 void loop() {
   static uint32_t lastPIDTime = 0;
-  static uint32_t lastPrintTime = 0;
-  static bool directPWM = false;
   uint32_t currentTime = millis();
   
-  // Process serial commands
-  processSerialCommand();
+  // Process serial commands (only for stop/avoid now)
+  // processSerialCommand();
   
   // Toggle motor with button (fallback)
   bool buttonState = digitalRead(BTN_BOOT);
@@ -278,11 +312,15 @@ void loop() {
     motorOn = !motorOn;
     digitalWrite(LED_RED, motorOn ? HIGH : LOW);
     
-    // Reset PID when starting
     if (motorOn) {
       integral = 0.0;
       lastError = 0.0;
-      directPWM = false; // Switch back to PID when using button
+      if (currentState == COMPLETED) {
+        currentState = AVOID_PATH; // Restart avoid path if completed
+      }
+    } else {
+      currentState = IDLE;
+      avoidPathActive = false;
     }
   }
   lastButtonState = buttonState;
@@ -292,34 +330,27 @@ void loop() {
 
   // Run PID control at fixed intervals (10ms)
   if (motorOn && (currentTime - lastPIDTime >= Ts * 1000)) {
-    if (!directPWM) {
-      // Compute PID output
-      float pidOutput = computePID(speed, TARGET_SPEED);
-      
-      // Convert PID output to PWM (ensure positive for forward motion)
-      motorPWM = (int16_t)pidOutput;
-    }
-    // If directPWM is true, motorPWM is set by serial command
+    // Compute PID output for constant speed
+    float pidOutput = computePID(speed, TARGET_SPEED);
+    motorPWM = (int16_t)pidOutput;
     
     // Apply motor command
     setMotor(motorPWM);
+    
+    // Update obstacle avoidance state machine
+    if (currentState == AVOID_PATH) {
+      updateAvoidPathState();
+    }
     
     lastPIDTime = currentTime;
   } else if (!motorOn) {
     // Stop motor when disabled
     setMotor(0);
     motorPWM = 0;
-    integral = 0.0; // Reset integral when off
+    integral = 0.0;
   }
 
-  // Print telemetry every 100ms (reduced frequency)
-  if (currentTime - lastPrintTime >= 100) {
-    // Serial.printf("Spd:%.3f|Tar:%.3f|Err:%.3f|PWM:%4d|P:%.1f|I:%.1f|D:%.1f\n",
-    //               speed, TARGET_SPEED, error, motorPWM, 
-    //               KP, KI, KD);
-    Serial.println(speed);
-    lastPrintTime = currentTime;
-  }
+  Serial.printf("%6.4f, %6.4f\n", speed, distanceTraveled);
 
   delay(10); // Small delay for stability
 }
