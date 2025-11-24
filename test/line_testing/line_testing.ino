@@ -99,7 +99,7 @@ void loop() {
       }
       
       // Set constant motor speed
-      setMotor(PWM_NORMAL);
+      // setMotor(PWM_NORMAL);
       
       // Debug output every 100ms
       static uint32_t lastDebugTime = 0;
@@ -120,7 +120,7 @@ void loop() {
       // Check for lost line
       if (detectLostLine()) {
         Serial.println("LOST LINE DETECTED!");
-        setMotor(0);  // Stop motor
+        // setMotor(0);  // Stop motor
       }
       
       // Check for junction

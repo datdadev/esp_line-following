@@ -51,7 +51,7 @@ def read_esp32_bluetooth(port='COM3', baudrate=115200):
             log_dir = os.path.join(".", "test", "log")
             os.makedirs(log_dir, exist_ok=True)
             # filename = os.path.join(log_dir, f"esp32_log_{datetime.now().strftime('%H%M%S')}.txt")
-            filename = os.path.join(log_dir, f"esp32_log_curve.txt")
+            filename = os.path.join(log_dir, f"esp32_log_curve_trial_99.txt")
             
             with open(filename, 'w') as f:
                 f.write("\n".join(messages))

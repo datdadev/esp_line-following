@@ -34,9 +34,9 @@ constexpr float LINE_TS = 0.001f;    // 1ms for line following
 constexpr uint32_t LINE_INTERVAL = 1;    // 1ms
 
 // Lyapunov Controller Constants
-constexpr float LYP_K2 = 0.2f;
-constexpr float LYP_K3 = 0.3f;  
-constexpr float LYP_VREF = 150.0f;
+constexpr float LYP_K2 = 0.2f; // 0.2f;
+constexpr float LYP_K3 = 0.3f; // 0.3f;  
+constexpr float LYP_VREF = 150.0f; // scaling for derivative/heading term
 constexpr float LYP_OMEGA_REF = 0.0f;
 constexpr float LYP_STEERING_LIMIT = 0.7854f;
 constexpr float LYP_WHEELBASE = 0.1f;
@@ -46,7 +46,8 @@ const float LINE_CALIBRATION_BASE = 112.0f;
 const float LINE_CALIBRATION_COEFFS[7] = {1.01705f, 1.02579f, 0.97291f, 0.98378f, 1.0038f, 1.00516f, 0.99195f};
 const int16_t LINE_CALIBRATION_OFFSETS[7] = {122, 92, 118, 99, 125, 103, 122};
 const float ERROR_COEFFS[7] = {3.0f, 2.0f, 1.0f, 0.0f, -1.0f, -2.0f, -3.0f};
-const float SCALING_FACTOR = 13.0f;
+const float SCALING_FACTOR = 13.0f; // 13.0f
+const float ERROR_OFFSET = 0.0f; // 0.0f
 
 // ===================== PIN DEFINITIONS =====================
 #define AIN1    12
@@ -64,6 +65,8 @@ const float SCALING_FACTOR = 13.0f;
 #define BTN_BOOT 0
 #define ULTRASONIC_PIN 2
 
+#define SPEED 1.0f
+
 // ===================== SYSTEM STATES =====================
 enum SystemState {
   IDLE,
@@ -78,7 +81,7 @@ float distanceTraveled = 0.0f;
 int32_t initialEncoderCount = 0;
 
 // ===================== MOTOR CONTROL =====================
-float TARGET_SPEED = 1.0f;
+float TARGET_SPEED = SPEED;
 float KP = 150.0f;
 float KI = 1000.0f;  
 float KD = 5.0f;
@@ -111,6 +114,14 @@ const uint32_t RESET_HOLD_TIME = 3000;
 // Ultrasonic Variables
 float sonarDistance = 0.0f;
 bool obstacleDetected = false;
+
+bool autoStarted = false;
+
+// ===================== LOGGING VARIABLES =====================
+float steeringAngleDeg = 0.0f;   // servo steering angle (deg, relative to straight)
+float linearSpeed = 0.0f;        // motor linear speed (m/s)
+uint8_t currentServoCmd = SERVO_STRAIGHT;
+
 
 // ===================== RTOS HANDLES =====================
 TaskHandle_t ultrasonicTaskHandle = NULL;
@@ -308,6 +319,22 @@ void IRAM_ATTR encoderISR() {
     lastEncoded = encoded;
 }
 
+// float calculateSpeed() {
+//     uint32_t currentTime = millis();
+//     float deltaTime = (currentTime - lastSpeedCalcTime) / 1000.0f;
+//     if (deltaTime <= 0) return motorSpeed;
+
+//     int32_t deltaCount = encoderCount - lastEncoderCount;
+//     float deltaWheelRev = deltaCount / COUNTS_PER_REV;
+//     float distance = deltaWheelRev * (WHEEL_DIAMETER * 3.14159265f);
+//     motorSpeed = distance / deltaTime;
+
+//     lastEncoderCount = encoderCount;
+//     lastSpeedCalcTime = currentTime;
+
+//     return motorSpeed;
+// }
+
 float calculateSpeed() {
     uint32_t currentTime = millis();
     float deltaTime = (currentTime - lastSpeedCalcTime) / 1000.0f;
@@ -315,22 +342,41 @@ float calculateSpeed() {
 
     int32_t deltaCount = encoderCount - lastEncoderCount;
     float deltaWheelRev = deltaCount / COUNTS_PER_REV;
-    float distance = deltaWheelRev * (WHEEL_DIAMETER * 3.14159265f);
-    motorSpeed = distance / deltaTime;
+    float distance = deltaWheelRev * (WHEEL_DIAMETER * 3.14159265f); // meters
+    motorSpeed = distance / deltaTime; // m/s
 
     lastEncoderCount = encoderCount;
     lastSpeedCalcTime = currentTime;
 
+    // expose to logger
+    linearSpeed = motorSpeed;
+
     return motorSpeed;
 }
 
+
+// void setServoAngle(uint8_t angle) {
+//     angle = constrain(angle, 0, 180);
+//     uint16_t pulseWidth = map(angle, 0, 180, 500, 2400);
+//     digitalWrite(SERVO_PIN, HIGH);
+//     delayMicroseconds(pulseWidth);
+//     digitalWrite(SERVO_PIN, LOW);
+// }
+
 void setServoAngle(uint8_t angle) {
     angle = constrain(angle, 0, 180);
+    currentServoCmd = angle;
+
+    // Convert servo command to steering angle relative to straight position
+    // Example: SERVO_STRAIGHT = 95, angle = 118 => +23 deg
+    steeringAngleDeg = (float)currentServoCmd - (float)SERVO_STRAIGHT;
+
     uint16_t pulseWidth = map(angle, 0, 180, 500, 2400);
     digitalWrite(SERVO_PIN, HIGH);
     delayMicroseconds(pulseWidth);
     digitalWrite(SERVO_PIN, LOW);
 }
+
 
 void setMotor(int16_t pwm) {
     // Immediate braking when pwm is 0
@@ -426,7 +472,7 @@ float computeError() {
         return 0.0f;
     }
     
-    return (den != 0.0f) ? (num * SCALING_FACTOR / den) : 0.0f;
+    return (den != 0.0f) ? (num * SCALING_FACTOR / den) + ERROR_OFFSET : 0.0f;
 }
 
 bool detectLostLine() {
@@ -473,7 +519,7 @@ bool detectJunction() {
 }
 
 // Lyapunov Controller with proper initialization
-int8_t LyapunovController(float e2, float* result) {
+int8_t LyapunovController(float e2, float v, float* result) {
     if (result == nullptr) return -1;
     
     constexpr float ALPHA_E2 = 0.05f;
@@ -509,15 +555,24 @@ int8_t LyapunovController(float e2, float* result) {
     float de2Filtered = prevDe2Filtered + ALPHA_DE2 * (de2 - prevDe2Filtered);
     prevDe2Filtered = de2Filtered;
     
-    float ratio = de2Filtered / LYP_VREF;
+    // 1) effective speed (avoid divide-by-zero)
+    float v_eff = fabs(v);
+    if (v_eff < 0.05f) {         // pick something small
+        v_eff = 0.05f;           // or use a nominal value
+    }
+
+    // 2) heading proxy from derivative
+    float ratio = de2Filtered / v_eff;
     float e3 = (fabs(ratio) < SMALL_ANGLE_THRESHOLD) ? ratio : atan(ratio);
-    
+
+    // 3) omega = k2 * v * e2 + k3 * sin(e3)
     float sin_e3 = (fabs(e3) < SMALL_ANGLE_THRESHOLD) ? e3 : sin(e3);
-    float omega = LYP_OMEGA_REF + K2_VREF * e2Filtered + LYP_K3 * sin_e3;
-    
-    float omega_ratio = L_VREF_RATIO * omega;
+    float omega = LYP_OMEGA_REF + LYP_K2 * v_eff * e2Filtered + LYP_K3 * sin_e3;
+
+    // 4) gamma from bicycle model: gamma = atan(L/v * omega)
+    float omega_ratio = (LYP_WHEELBASE / v_eff) * omega;
     float gamma = (fabs(omega_ratio) < SMALL_ANGLE_THRESHOLD) ? omega_ratio : atan(omega_ratio);
-    
+
     gamma = constrain(gamma, -LYP_STEERING_LIMIT, LYP_STEERING_LIMIT);
     
     float gammaDeg = gamma * 57.2958f;
@@ -574,7 +629,7 @@ void updateAvoidPathState() {
         setServoAngle(SERVO_AVOID_LEFT);
         resetPathEncoder();
         avoidPathActive = true;
-        TARGET_SPEED = 0.8f; // Giảm tốc khi bắt đầu tránh vật cản
+        TARGET_SPEED = SPEED * 0.8f; // Giảm tốc khi bắt đầu tránh vật cản
         // serial.println("Avoidance: Stage 1 - Turn left");
         return;
     }
@@ -601,7 +656,7 @@ void updateAvoidPathState() {
     } 
     else {
         setServoAngle(SERVO_AVOID_RIGHT);
-        TARGET_SPEED = 0.5f;
+        TARGET_SPEED = SPEED * 0.5f;
         
         if (readLineSensors() == 0) {
             float e = computeError();
@@ -618,13 +673,13 @@ void startLineRecovery() {
     
     // Giai đoạn 1: Tiếp tục quay phải nhẹ để căn line
     setServoAngle(SERVO_STRAIGHT + 10); // Quay phải nhẹ
-    TARGET_SPEED = 0.5f; // Tốc độ chậm
+    TARGET_SPEED = SPEED * 0.5f; // Tốc độ chậm
     delay(100); // Chạy 100ms với góc này
     
     // Giai đoạn 2: Chuyển về line following với tốc độ thấp
     currentState = LINE_FOLLOWING;
     avoidPathActive = false;
-    TARGET_SPEED = 0.5f; // Tốc độ ban đầu thấp
+    TARGET_SPEED = SPEED * 0.5f; // Tốc độ ban đầu thấp
     
     // serial.println("Recovery complete - Back to line following");
 }
@@ -714,6 +769,17 @@ void loop() {
     
     // Handle button input
     handleButtonPress();
+
+    // // Auto-start after 1 second
+    // static uint32_t startTime = millis();
+    // if (!autoStarted && millis() - startTime >= 3000) {
+    //     currentState = LINE_FOLLOWING;
+    //     motorOn = true;
+    //     resetPID();
+    //     setServoAngle(SERVO_STRAIGHT);
+    //     autoStarted = true;
+    // }
+    // if (autoStarted) handleButtonPress();
     
     // Get ultrasonic data
     float newDistance;
@@ -759,28 +825,28 @@ void loop() {
                     return;
                 } else {
                     setServoAngle(SERVO_STRAIGHT);
-                    TARGET_SPEED = _finished ? 0.0f : 0.1f;
+                    TARGET_SPEED = _finished ? 0.0f : SPEED * 0.1f;
                 }
             } 
             // FOURTH: Normal line following
             else {
                 if (_finished) {
-                    uint32_t timeSinceFinish = millis() - finishDetectedTime;
+                    uint32_t timeSinceFinish = millis() - finishDetectedTime * SPEED;
                     
                     if (timeSinceFinish >= FINISH_DELAY) {
-                        if (TARGET_SPEED > 0.2f)
-                            TARGET_SPEED -= 0.0025f;
+                        if (TARGET_SPEED > SPEED * 0.2f)
+                            TARGET_SPEED -= SPEED * 0.0025f;
                     } else {
-                        TARGET_SPEED = 1.0f; 
+                        TARGET_SPEED = SPEED; 
                     }
                 } else {
-                    if (TARGET_SPEED < 1.0f) {
-                        TARGET_SPEED += 0.01f;
+                    if (TARGET_SPEED < SPEED) {
+                        TARGET_SPEED += SPEED * 0.01f;
                     }
                 }
                 
                 float steeringCorrection = 0.0f;
-                if (LyapunovController(e, &steeringCorrection) == 0) {
+                if (LyapunovController(e, linearSpeed, &steeringCorrection) == 0) {
                     setServoAngle(SERVO_STRAIGHT + (int8_t)steeringCorrection);
                 }
             }
@@ -820,20 +886,35 @@ void loop() {
         }
     }
     
+    // // LOW PRIORITY: Status printing (20ms)
+    // if (currentTime - lastPrintTime >= 20) {
+    //     const char* stateStr;
+    //     switch(currentState) {
+    //         case IDLE: stateStr = "IDLE"; break;
+    //         case LINE_FOLLOWING: stateStr = "LINE_FOLLOWING"; break;
+    //         case AVOID_PATH: stateStr = "AVOIDING"; break;
+    //         default: stateStr = "UNKNOWN";
+    //     }
+        
+    //     // SerialBT.printf("State: %-12s Sonar: %4.0fmm LineErr: %6.2f Speed: %4.2fm/s PWM: %3d\n",
+    //     //               stateStr, sonarDistance, lineFollowError, motorSpeed, motorPWM);
+    //     // SerialBT.printf("%4.2f, %4.2f, %4.2f\n", lineFollowError, steering_angle, linear_speed);
+    //     lastPrintTime = currentTime;
+    // }
+
     // LOW PRIORITY: Status printing (20ms)
     if (currentTime - lastPrintTime >= 20) {
-        const char* stateStr;
-        switch(currentState) {
-            case IDLE: stateStr = "IDLE"; break;
-            case LINE_FOLLOWING: stateStr = "LINE_FOLLOWING"; break;
-            case AVOID_PATH: stateStr = "AVOIDING"; break;
-            default: stateStr = "UNKNOWN";
-        }
-        
-        // SerialBT.printf("State: %-12s Sonar: %4.0fmm LineErr: %6.2f Speed: %4.2fm/s PWM: %3d\n",
-        //               stateStr, sonarDistance, lineFollowError, motorSpeed, motorPWM);
-        SerialBT.printf("%4.2f\n", lineFollowError);
         lastPrintTime = currentTime;
+
+        // Make sure latest speed is used (optional, if not already updated in last 10ms PID block)
+        // calculateSpeed();  // uncomment if you want strictly 20ms speed update
+
+        // Log: line error, steering angle (deg), linear speed (m/s)
+        // Format: e, gamma_deg, v
+        SerialBT.printf("%4.2f, %4.2f, %4.3f\n",
+                        lineFollowError,
+                        steeringAngleDeg,
+                        linearSpeed);
     }
 
     // delay(1);

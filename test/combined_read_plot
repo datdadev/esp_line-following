@@ -1,0 +1,229 @@
+import serial
+import time
+import sys
+import os
+from datetime import datetime
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+# ================== CONFIG ==================
+SAMPLING_TIME_MS = 20            # 20 ms per sample
+PLOT_WINDOW_SEC = 5.0           # realtime plot window (change to 10, 20, ...)
+LOG_DIR = os.path.join(".", "test", "log")
+LOG_FILE = os.path.join(LOG_DIR, "esp32_log_curve.txt")
+
+
+# ================== LOGGING + PLOTTING ==================
+def setup_plot():
+    """Prepare 3-subplot figure for realtime plotting."""
+    plt.ion()
+    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(14, 8), sharex=True)
+
+    # Error
+    line_err, = ax1.plot([], [], label="Error")
+    ax1.axhline(0, color='k', linestyle='--', alpha=0.3)
+    ax1.set_ylabel("Error")
+    ax1.set_title(f"Error, Steering, PWM (Ts = {SAMPLING_TIME_MS} ms)")
+    ax1.grid(True, alpha=0.3)
+    ax1.legend(loc="upper right")
+    ax1.set_ylim(-35, 35)        # <--- limit error
+
+    # Steering
+    line_steer, = ax2.plot([], [], label="Steering")
+    ax2.axhline(0, color='k', linestyle='--', alpha=0.3)
+    ax2.set_ylabel("Steering (deg)")
+    ax2.grid(True, alpha=0.3)
+    ax2.legend(loc="upper right")
+    ax2.set_ylim(-60, 60)        # <--- limit steering
+
+    # PWM
+    line_pwm, = ax3.plot([], [], label="PWM")
+    ax3.axhline(0, color='k', linestyle='--', alpha=0.3)
+    ax3.set_xlabel("Time (s)")
+    ax3.set_ylabel("PWM")
+    ax3.grid(True, alpha=0.3)
+    ax3.legend(loc="upper right")
+    ax3.set_ylim(0, 1.5)         # <--- limit pwm
+
+    plt.tight_layout()
+    return fig, (ax1, ax2, ax3), (line_err, line_steer, line_pwm)
+
+def update_plot(fig, axes, lines, t, errors, steerings, pwms, window_sec=PLOT_WINDOW_SEC):
+    """Update realtime plot with new data, only showing last `window_sec` seconds."""
+    if len(t) == 0:
+        return
+
+    ax1, ax2, ax3 = axes
+    line_err, line_steer, line_pwm = lines
+
+    t_arr = np.array(t)
+    err_arr = np.array(errors)
+    steer_arr = np.array(steerings)
+    pwm_arr = np.array(pwms)
+
+    # window selection
+    t_last = t_arr[-1]
+    t_min = max(0.0, t_last - window_sec)
+    mask = t_arr >= t_min
+
+    t_win = t_arr[mask]
+    err_win = err_arr[mask]
+    steer_win = steer_arr[mask]
+    pwm_win = pwm_arr[mask]
+
+    line_err.set_data(t_win, err_win)
+    line_steer.set_data(t_win, steer_win)
+    line_pwm.set_data(t_win, pwm_win)
+
+    # only x-limits move
+    ax1.set_xlim(t_min, max(t_min + 1e-3, t_last))
+
+    fig.canvas.draw()
+    fig.canvas.flush_events()
+    plt.pause(0.001)
+
+def final_static_plot(t, errors, steerings, pwms):
+    """Plot final static figure after stopping (full data)."""
+    if len(t) == 0:
+        print("No data to plot.")
+        return
+
+    t_arr = np.array(t)
+    errors = np.array(errors)
+    steerings = np.array(steerings)
+    pwms = np.array(pwms)
+
+    plt.ioff()
+    plt.figure(figsize=(14, 8))
+
+    ax1 = plt.subplot(3, 1, 1)
+    ax1.plot(t_arr, errors, linewidth=1.5, label='Error')
+    ax1.axhline(0, color='k', linestyle='--', alpha=0.3)
+    ax1.set_ylabel('Error')
+    ax1.set_title(f'Error, Steering, PWM (Ts = {SAMPLING_TIME_MS} ms)')
+    ax1.grid(True, alpha=0.3)
+    ax1.legend(loc='upper right')
+    ax1.set_ylim(-35, 35)        # same limits
+
+    ax2 = plt.subplot(3, 1, 2, sharex=ax1)
+    ax2.plot(t_arr, steerings, linewidth=1.5, label='Steering')
+    ax2.axhline(0, color='k', linestyle='--', alpha=0.3)
+    ax2.set_ylabel('Steering (deg)')
+    ax2.grid(True, alpha=0.3)
+    ax2.legend(loc='upper right')
+    ax2.set_ylim(-60, 60)        # same limits
+
+    ax3 = plt.subplot(3, 1, 3, sharex=ax1)
+    ax3.plot(t_arr, pwms, linewidth=1.5, label='PWM')
+    ax3.axhline(0, color='k', linestyle='--', alpha=0.3)
+    ax3.set_xlabel('Time (s)')
+    ax3.set_ylabel('PWM')
+    ax3.grid(True, alpha=0.3)
+    ax3.legend(loc='upper right')
+    ax3.set_ylim(0, 1.5)         # same limits
+
+    plt.tight_layout()
+    plt.show()
+
+    # ... phần stats giữ nguyên ...
+
+def read_esp32_bluetooth_with_plot(port='COM3', baudrate=115200):
+    """
+    Read messages from ESP32 via Bluetooth, log to file,
+    and plot error/steering/pwm in realtime.
+    """
+    ser = None
+    messages = []  # raw log lines with timestamp prefix
+
+    # data arrays for plotting
+    errors = []
+    steerings = []
+    pwms = []
+    t = []          # time axis (seconds)
+    sample_idx = 0
+
+    # setup plot
+    fig, axes, lines = setup_plot()
+
+    try:
+        ser = serial.Serial(
+            port=port,
+            baudrate=baudrate,
+            parity=serial.PARITY_NONE,
+            stopbits=serial.STOPBITS_ONE,
+            bytesize=serial.EIGHTBITS,
+            timeout=1
+        )
+
+        print(f"🔗 Connected to {port}")
+        print("📡 Waiting for messages from ESP32...")
+        print("Press Ctrl+C to exit, save log, and show final plot")
+        print("-" * 60)
+
+        while True:
+            if ser.in_waiting > 0:
+                raw = ser.readline().decode('utf-8', errors='ignore').strip()
+                if not raw:
+                    continue
+
+                # raw is expected: "e, s, p"
+                timestamp = time.strftime("%H:%M:%S")
+                log_line = f"[{timestamp}] ESP32: {raw}"
+                print(log_line)
+                messages.append(log_line)
+
+                # parse the 3 values
+                parts = [p.strip() for p in raw.split(',')]
+                if len(parts) < 3:
+                    continue
+
+                try:
+                    e = float(parts[0])
+                    s = float(parts[1])
+                    p = float(parts[2])
+                except ValueError:
+                    continue
+
+                errors.append(e)
+                steerings.append(s)
+                pwms.append(p)
+
+                # time axis based on index * Ts
+                dt = SAMPLING_TIME_MS / 1000.0
+                t.append(sample_idx * dt)
+                sample_idx += 1
+
+                # update plot every N samples để đỡ lag
+                if sample_idx % 5 == 0:
+                    update_plot(fig, axes, lines, t, errors, steerings, pwms,
+                                window_sec=PLOT_WINDOW_SEC)
+
+    except KeyboardInterrupt:
+        print("\n👋 Exiting and saving log...")
+
+        # Save log
+        if messages:
+            os.makedirs(LOG_DIR, exist_ok=True)
+            with open(LOG_FILE, 'w') as f:
+                f.write("\n".join(messages))
+            print(f"💾 Log saved to: {LOG_FILE} ({len(messages)} messages)")
+
+        # Final static plot + stats
+        final_static_plot(t, errors, steerings, pwms)
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+
+    finally:
+        if ser and ser.is_open:
+            ser.close()
+            print("🔒 Connection closed")
+
+
+if __name__ == "__main__":
+    com_port = 'COM15'  # default
+    if len(sys.argv) > 1:
+        com_port = sys.argv[1]
+
+    read_esp32_bluetooth_with_plot(com_port)
